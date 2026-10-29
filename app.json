@@ -14,6 +14,12 @@
             "usesCleartextTraffic": true
           }
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Let Alumhacks access your photo library to choose a profile photo."
+        }
       ]
     ],
     "android": {

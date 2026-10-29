@@ -7,7 +7,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -15,8 +14,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import MapView, { Marker } from 'react-native-maps';
+import * as ImagePicker from 'expo-image-picker';
 import { demoDevices, demoNotices, GinjerClient, hasCoordinates } from './src/api';
 
 const C = {
@@ -45,6 +46,20 @@ const DEMO_PROFILE = { name: 'Shaheen Ansari', email: 'shaheenansari2519cs@gmail
 
 function IconButton({ name, onPress, label, style, color = C.muted, size = 21 }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={8} style={[styles.iconButton, style]}><Icon name={name} size={size} color={color} /></Pressable>;
+}
+
+function ProfileAvatar({ uri, onEditPress, size = 82, style }) {
+  const radius = size / 2;
+  return (
+    <View style={[styles.avatarWrap, { width: size, height: size }, style]}>
+      <View style={[styles.avatar, { width: size, height: size, borderRadius: radius }]}>
+        {uri ? <Image source={{ uri }} resizeMode="cover" style={styles.avatarImage} /> : <Icon name="account-outline" size={Math.round(size * 0.42)} color={C.greenDark} />}
+      </View>
+      <Pressable accessibilityRole="button" accessibilityLabel="Edit profile photo" onPress={onEditPress} hitSlop={12} style={styles.editPhotoButton}>
+        <Icon name="camera-outline" size={15} color={C.white} />
+      </Pressable>
+    </View>
+  );
 }
 
 function ScreenHeader({ title, onBack, right }) {
@@ -97,12 +112,14 @@ function BottomTabs({ current, onChange }) {
     ['devices', 'Devices', 'view-dashboard-outline'], ['locations', 'Locations', 'map-marker-radius-outline'],
     ['analytics', 'Analytics', 'chart-box-outline'], ['profile', 'Profile', 'account-outline'],
   ];
-  return <View style={styles.bottomTabs}>
-    {items.map(([id, label, icon]) => <Pressable key={id} accessibilityRole="tab" accessibilityState={{ selected: current === id }} onPress={() => onChange(id)} style={styles.tabButton}>
-      <Icon name={icon} size={22} color={current === id ? C.greenDark : '#9BA19D'} />
-      <Text style={[styles.tabLabel, current === id && styles.tabLabelActive]}>{label}</Text>
-    </Pressable>)}
-  </View>;
+  return <SafeAreaView edges={['bottom']} style={styles.tabSafeArea}>
+    <View style={styles.bottomTabs}>
+      {items.map(([id, label, icon]) => <Pressable key={id} accessibilityRole="tab" accessibilityState={{ selected: current === id }} onPress={() => onChange(id)} style={styles.tabButton}>
+        <Icon name={icon} size={22} color={current === id ? C.greenDark : '#9BA19D'} />
+        <Text style={[styles.tabLabel, current === id && styles.tabLabelActive]}>{label}</Text>
+      </Pressable>)}
+    </View>
+  </SafeAreaView>;
 }
 
 function ActionButton({ title, onPress, secondary = false, disabled = false, style }) {
@@ -130,6 +147,10 @@ function Sheet({ visible, title, subtitle, onClose, children, actions }) {
 }
 
 export default function App() {
+  return <SafeAreaProvider><AppContent /></SafeAreaProvider>;
+}
+
+function AppContent() {
   const [serverInput, setServerInput] = useState('');
   const [serverUrl, setServerUrl] = useState('');
   const [connectedToBackend, setConnectedToBackend] = useState(false);
@@ -152,6 +173,7 @@ export default function App() {
   const [activeOrganisation, setActiveOrganisation] = useState(null);
   const [activeProject, setActiveProject] = useState(null);
   const [profile, setProfile] = useState(DEMO_PROFILE);
+  const [profilePhotoUri, setProfilePhotoUri] = useState(null);
   const [selectedDevice, setSelectedDevice] = useState(demoDevices[1]);
   const [selectedMapDevice, setSelectedMapDevice] = useState(null);
   const [query, setQuery] = useState('');
@@ -166,11 +188,32 @@ export default function App() {
   const isConnected = connectedToBackend && !demoMode;
   const hasTabs = ['devices', 'locations', 'analytics', 'profile'].includes(route);
   const positionableDevices = useMemo(() => devices.filter(hasCoordinates), [devices]);
-
   const showToast = useCallback(message => {
     setToast(message);
     setTimeout(() => setToast(''), 2500);
   }, []);
+
+  const pickImage = useCallback(async () => {
+    try {
+      let permission = await ImagePicker.getMediaLibraryPermissionsAsync();
+      if (!permission.granted) permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        showToast('Allow photo access to choose a profile picture.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      setProfilePhotoUri(result.assets[0].uri);
+      showToast('Profile photo updated.');
+    } catch {
+      showToast('Could not open the photo library. Please try again.');
+    }
+  }, [showToast]);
 
   const changeTab = useCallback(nextTab => {
     setTab(nextTab); setRoute(nextTab); setQuery(''); setSelectedMapDevice(null); setExpanded(false);
@@ -294,7 +337,7 @@ export default function App() {
     await client?.clearToken();
     setDemoMode(true); setDevices(demoDevices); setSelectedDevice(demoDevices[1]);
     setOrganisations([]); setProjects([]); setModules([]); setActiveOrganisation(null); setActiveProject(null);
-    setProfile(DEMO_PROFILE); setRoute('login'); setTab('devices'); setModal(null); showToast('Signed out.');
+    setProfile(DEMO_PROFILE); setProfilePhotoUri(null); setRoute('login'); setTab('devices'); setModal(null); showToast('Signed out.');
   };
 
   const refresh = async () => {
@@ -383,7 +426,7 @@ export default function App() {
         {loginError ? <Text accessibilityRole="alert" style={styles.errorText}>{loginError}</Text> : null}
         <ActionButton title={loading ? 'Connecting…' : 'Connect'} disabled={loading} onPress={submitLogin} style={{ marginTop: 20 }} />
         <Pressable onPress={showDemo} style={styles.textLink}><Text style={styles.linkText}>Preview demo data</Text></Pressable>
-        <Text style={styles.legalText}>By signing in, you agree to Ginjer's <Text style={styles.linkText}>Terms of Service</Text> and <Text style={styles.linkText}>Privacy Policy</Text>.</Text>
+        <Text style={styles.legalText}>By signing in, you agree to Ginjer's <Text style={styles.legalLinkText}>Terms of Service</Text> and <Text style={styles.legalLinkText}>Privacy Policy</Text>.</Text>
         <Pressable onPress={() => { setRoute('setup'); setConnectedToBackend(false); }} style={styles.changeServer}><Text style={styles.mutedLink}>Change computer connection</Text></Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -464,7 +507,11 @@ export default function App() {
 
   const renderProfile = () => <ScrollView style={styles.screen} contentContainerStyle={styles.profileScroll}>
     <Text style={styles.profileHeading}>Profile</Text>
-    <View style={styles.profileHero}><View style={styles.avatar}><Image source={require('./assets/reference/profile-photo.png')} resizeMode="cover" style={styles.avatarImage} /></View><Text style={styles.profileName}>{profile.name}</Text><Text style={styles.profileEmail}>{profile.email}</Text></View>
+    <View style={styles.profileHero}>
+      <ProfileAvatar uri={profilePhotoUri} onEditPress={pickImage} size={88} />
+      <Text style={styles.profileName}>{profile.name}</Text>
+      <Text style={styles.profileEmail}>{profile.email}</Text>
+    </View>
     <View style={styles.profileMenu}>
       <Pressable onPress={() => setRoute('edit')} style={styles.menuRow}><Icon name="account-outline" size={20} color={C.greenDark} /><Text style={styles.menuTitle}>My Profile</Text><Icon name="chevron-right" size={18} color="#A8ADA9" /></Pressable>
       <Pressable onPress={() => setModal('projects')} style={styles.menuRow}><Icon name="view-grid-outline" size={20} color={C.greenDark} /><View style={{ flex: 1 }}><Text style={styles.menuTitle}>Project</Text><Text numberOfLines={1} style={styles.menuValue}>{activeProject?.name || 'Demo Project'}</Text></View><Icon name="chevron-right" size={18} color="#A8ADA9" /></Pressable>
@@ -516,15 +563,14 @@ export default function App() {
     </View>;
   };
 
-  const renderEdit = () => <View style={styles.screen}>
-    <ScreenHeader title="Edit Profile" onBack={() => setRoute('profile')} right={<IconButton name="check" label="Save profile" color={C.greenDark} onPress={() => { setRoute('profile'); showToast('Profile updates are not available in the supplied Ginjer API.'); }} />} />
-    <ScrollView contentContainerStyle={styles.standardScroll}>
-      <View style={[styles.avatar, { alignSelf: 'center', marginBottom: 18 }]}><Image source={require('./assets/reference/profile-photo.png')} style={styles.avatarImage} /></View>
+  const renderEdit = () => <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <ScreenHeader title="Edit Profile" onBack={() => setRoute('profile')} />
+    <ScrollView style={styles.screen} contentContainerStyle={styles.standardScroll} keyboardShouldPersistTaps="handled">
       <Text style={styles.fieldLabel}>Full name</Text><TextInput value={profile.name} onChangeText={value => setProfile(current => ({ ...current, name: value }))} style={styles.textInput} />
       <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Email</Text><TextInput value={profile.email} onChangeText={value => setProfile(current => ({ ...current, email: value }))} keyboardType="email-address" autoCapitalize="none" style={styles.textInput} />
       <ActionButton title="Save changes" onPress={() => { setRoute('profile'); showToast('Profile updates are not available in the supplied Ginjer API.'); }} style={{ marginTop: 18 }} />
     </ScrollView>
-  </View>;
+  </KeyboardAvoidingView>;
 
   const renderBody = () => {
     if (route === 'devices') return renderDevices();
@@ -582,7 +628,7 @@ export default function App() {
   if (route === 'setup') return renderSetup();
   if (route === 'login') return renderLogin();
 
-  return <SafeAreaView style={styles.safeArea}>
+  return <SafeAreaView edges={hasTabs ? ['top'] : ['top', 'bottom']} style={styles.safeArea}>
     <StatusBar barStyle="dark-content" backgroundColor={route === 'locations' || route === 'map' ? '#F8FAF5' : C.canvas} />
     <View style={styles.appBody}>{renderBody()}</View>
     {hasTabs ? <BottomTabs current={tab} onChange={changeTab} /> : null}
@@ -616,16 +662,16 @@ const styles = StyleSheet.create({
   kicker: { color: C.green, fontSize: 12, fontWeight: '800', letterSpacing: 1.2, marginBottom: 11 }, screenHeading: { color: C.ink, fontSize: 24, fontWeight: '700', marginBottom: 9 }, bodyCopy: { color: '#6F7771', fontSize: 14, lineHeight: 21, marginBottom: 18 },
   textInput: { width: '100%', minHeight: 51, paddingHorizontal: 13, paddingVertical: 11, borderWidth: 1.2, borderColor: '#C9CDC9', borderRadius: 11, backgroundColor: C.white, color: C.ink, fontSize: 15 }, errorText: { color: C.red, fontSize: 13, lineHeight: 19, marginTop: 9 },
   primaryButton: { minHeight: 51, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center', borderRadius: 12, backgroundColor: C.green }, primaryButtonText: { color: C.white, fontSize: 16, fontWeight: '700' }, secondaryButton: { minHeight: 45, paddingHorizontal: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#DEE6D3', borderRadius: 11, backgroundColor: C.white }, secondaryButtonText: { color: C.greenDark, fontSize: 14, fontWeight: '600' }, disabledButton: { backgroundColor: '#E9EEE3', borderColor: '#E9EEE3' }, pressed: { opacity: 0.75, transform: [{ scale: 0.99 }] }, footnote: { color: '#969D97', fontSize: 12, lineHeight: 18, marginTop: 12 },
-  loginScroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 12, paddingBottom: 22, backgroundColor: C.white }, loginBrand: { height: 76, alignItems: 'center', justifyContent: 'center' }, ginjerLogo: { width: 235, height: 68 }, loginTagline: { marginTop: 5, color: '#969D98', fontSize: 16, textAlign: 'center' }, loginIllustration: { width: '100%', height: 190, marginTop: 14, marginBottom: 14 }, authTabs: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 11, backgroundColor: '#F2F4EF', marginBottom: 14 }, authTab: { minHeight: 38, flex: 1, justifyContent: 'center', alignItems: 'center', borderRadius: 8 }, authTabActive: { backgroundColor: C.white, elevation: 1, shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } }, authTabText: { color: C.muted, fontSize: 12, fontWeight: '500' }, authTabTextActive: { color: C.greenDark, fontWeight: '700' }, fieldLabel: { color: C.greenDark, fontSize: 13, fontWeight: '600', marginBottom: 7 }, textLink: { alignSelf: 'center', marginTop: 12, padding: 6 }, linkText: { color: C.greenDark, fontSize: 14, fontWeight: '600' }, legalText: { color: '#969D98', textAlign: 'center', fontSize: 11, lineHeight: 17, marginTop: 16 }, mutedLink: { color: '#929A94', fontSize: 12 }, changeServer: { alignSelf: 'center', marginTop: 7, padding: 5 },
+  loginScroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 12, paddingBottom: 22, backgroundColor: C.white }, loginBrand: { height: 76, alignItems: 'center', justifyContent: 'center' }, ginjerLogo: { width: 235, height: 68 }, loginTagline: { marginTop: 5, color: '#969D98', fontSize: 16, textAlign: 'center' }, loginIllustration: { width: '100%', height: 190, marginTop: 14, marginBottom: 14 }, authTabs: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 11, backgroundColor: '#F2F4EF', marginBottom: 14 }, authTab: { minHeight: 38, flex: 1, justifyContent: 'center', alignItems: 'center', borderRadius: 8 }, authTabActive: { backgroundColor: C.white, elevation: 1, shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } }, authTabText: { color: C.muted, fontSize: 12, fontWeight: '500' }, authTabTextActive: { color: C.greenDark, fontWeight: '700' }, fieldLabel: { color: C.greenDark, fontSize: 13, fontWeight: '600', marginBottom: 7 }, textLink: { alignSelf: 'center', marginTop: 12, padding: 6 }, linkText: { color: C.greenDark, fontSize: 14, fontWeight: '600' }, legalText: { color: '#969D98', textAlign: 'center', fontSize: 11, lineHeight: 17, marginTop: 16 }, legalLinkText: { color: C.greenDark, fontSize: 11, fontWeight: '600' }, mutedLink: { color: '#929A94', fontSize: 12 }, changeServer: { alignSelf: 'center', marginTop: 7, padding: 5 },
   listTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 17, paddingTop: 10, paddingBottom: 5 }, sectionTitle: { color: C.ink, fontSize: 19, lineHeight: 26, fontWeight: '700' }, topActions: { flexDirection: 'row', gap: 2 }, iconButton: { minWidth: 38, minHeight: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 10 }, pageHeader: { height: 52, zIndex: 4, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, backgroundColor: '#FFFFFFF2' }, pageTitle: { flex: 1, textAlign: 'center', color: C.ink, fontSize: 16, fontWeight: '700' }, pageRight: { minWidth: 38, alignItems: 'flex-end' },
   projectSelector: { minHeight: 52, marginHorizontal: 16, marginTop: 7, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: C.line, borderRadius: 12, backgroundColor: C.white, shadowColor: '#293221', shadowOpacity: 0.035, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 1 }, selectorCaption: { color: '#A1A7A2', fontSize: 9, lineHeight: 12, fontWeight: '700', letterSpacing: 0.7 }, selectorName: { color: C.ink, fontSize: 13, fontWeight: '600', marginTop: 2 },
   searchField: { minHeight: 45, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#EEF0EC', borderRadius: 12, backgroundColor: C.white, shadowColor: '#293221', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 }, searchInput: { flex: 1, minWidth: 0, height: 44, padding: 0, color: C.ink, fontSize: 13 },
   listSummary: { paddingHorizontal: 18, paddingTop: 13, paddingBottom: 7, flexDirection: 'row', justifyContent: 'space-between' }, summaryText: { color: '#929A94', fontSize: 10, fontWeight: '500' }, deviceList: { gap: 10, paddingHorizontal: 14, paddingTop: 4, paddingBottom: 16 }, deviceCard: { minHeight: 114, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, borderRadius: 14, backgroundColor: C.white, elevation: 2, shadowColor: '#1F2C19', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }, deviceThumb: { alignItems: 'center', justifyContent: 'center', borderRadius: 11, backgroundColor: '#F4F7F1' }, deviceCardBody: { flex: 1, minWidth: 0, alignSelf: 'stretch', justifyContent: 'center' }, deviceName: { color: C.ink, fontSize: 13, fontWeight: '700' }, deviceId: { color: '#929A94', fontSize: 9, marginTop: 2 }, deviceLocation: { color: '#7C857E', fontSize: 10, marginTop: 4 }, chipRow: { flexDirection: 'row', gap: 5, marginTop: 7 }, statusChip: { maxWidth: 100, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 6 }, statusChipText: { fontSize: 9, fontWeight: '600' }, deviceCardMeta: { width: 63, alignItems: 'flex-end', alignSelf: 'stretch', justifyContent: 'center' }, onlineDot: { width: 8, height: 8, borderRadius: 5, marginBottom: 4 }, lastLabel: { color: '#A1A7A2', fontSize: 8 }, lastTime: { maxWidth: '100%', marginTop: 2, color: '#626B64', fontSize: 8, lineHeight: 11, textAlign: 'right' },
-  bottomTabs: { minHeight: 60, paddingTop: 3, paddingBottom: Platform.OS === 'android' ? 4 : 2, flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E9ECE7', backgroundColor: C.white }, tabButton: { flex: 1, height: 54, alignItems: 'center', justifyContent: 'center', gap: 2 }, tabLabel: { color: '#999F9A', fontSize: 9, lineHeight: 12, fontWeight: '500' }, tabLabelActive: { color: C.greenDark, fontWeight: '700' }, notificationsLink: { minHeight: 44, marginTop: 5, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: '#F1F6E9' }, notificationsLinkText: { flex: 1, color: C.greenDark, fontSize: 12, fontWeight: '600' },
+  tabSafeArea: { backgroundColor: C.white }, bottomTabs: { minHeight: 60, paddingTop: 3, paddingBottom: Platform.OS === 'android' ? 4 : 2, flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E9ECE7', backgroundColor: C.white }, tabButton: { flex: 1, height: 54, alignItems: 'center', justifyContent: 'center', gap: 2 }, tabLabel: { color: '#999F9A', fontSize: 9, lineHeight: 12, fontWeight: '500' }, tabLabelActive: { color: C.greenDark, fontWeight: '700' }, notificationsLink: { minHeight: 44, marginTop: 5, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: '#F1F6E9' }, notificationsLinkText: { flex: 1, color: C.greenDark, fontSize: 12, fontWeight: '600' },
   emptyBox: { minHeight: 170, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 18 }, emptyInline: { minHeight: 56, justifyContent: 'center' }, emptyText: { color: '#929A94', fontSize: 13, textAlign: 'center' },
-  mapScreen: { flex: 1, backgroundColor: '#E6EBE1' }, mapHeader: { height: 48, zIndex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 16, paddingRight: 8, backgroundColor: '#FFFFFFF0' }, mapOverlay: { position: 'absolute', zIndex: 2, top: 58, left: 12, right: 12 }, mapSearch: { borderColor: '#E5EAE2' }, mapNotice: { position: 'absolute', zIndex: 1, top: 115, left: 14, right: 14, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: '#FFFFFFEE' }, mapNoticeText: { flex: 1, color: '#6E786F', fontSize: 10, lineHeight: 14 }, mapCount: { position: 'absolute', bottom: 14, left: 12, paddingHorizontal: 10, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, backgroundColor: '#FFFFFFF2', elevation: 2 }, mapCountText: { color: '#6F7970', fontSize: 10 }, markerBubble: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, borderRadius: 19, borderBottomLeftRadius: 5, elevation: 4 }, mapDeviceCard: { position: 'absolute', bottom: 54, left: 12, right: 12, minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 9, padding: 10, borderRadius: 13, backgroundColor: C.white, elevation: 5, shadowColor: '#162015', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }, mapDeviceName: { color: C.ink, fontSize: 13, fontWeight: '700' }, mapDeviceMeta: { color: C.muted, fontSize: 10, marginTop: 3 },
-  standardScroll: { paddingHorizontal: 16, paddingTop: 11, paddingBottom: 22 }, infoNote: { marginTop: 11, padding: 10, flexDirection: 'row', gap: 7, alignItems: 'center', borderWidth: 1, borderColor: '#E7EDDE', borderRadius: 10, backgroundColor: '#F4F8EE' }, infoNoteText: { flex: 1, color: '#6F7A6E', fontSize: 10, lineHeight: 15 }, statsRow: { flexDirection: 'row', gap: 10, marginTop: 12 }, statCard: { flex: 1, minHeight: 102, padding: 11, borderRadius: 12, backgroundColor: C.white, elevation: 1 }, statIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 9 }, statValue: { marginTop: 8, color: C.ink, fontSize: 19, fontWeight: '700' }, statLabel: { marginTop: 1, color: C.muted, fontSize: 10 }, sectionTitleSmall: { color: C.ink, fontSize: 13, fontWeight: '700', marginTop: 16, marginBottom: 8 }, metricCard: { marginTop: 10, padding: 13, borderRadius: 13, backgroundColor: C.white, elevation: 2, shadowColor: '#192512', shadowOpacity: 0.04, shadowRadius: 7, shadowOffset: { width: 0, height: 2 } }, metricHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }, metricName: { color: C.ink, fontSize: 12, fontWeight: '700' }, metricCaption: { color: '#999F9A', fontSize: 9, marginTop: 2 }, metricValue: { marginTop: 12, color: C.greenDark, fontSize: 25, fontWeight: '700', textAlign: 'center' }, metricFooter: { minHeight: 27, marginTop: 10, paddingTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line }, metricFooterText: { color: '#9CA39D', fontSize: 9 }, gauge: { height: 106, alignItems: 'center', justifyContent: 'flex-end', overflow: 'hidden' }, gaugeArc: { position: 'absolute', bottom: 0, width: 160, height: 80, borderWidth: 12, borderBottomWidth: 0, borderColor: '#C8E0E8', borderTopLeftRadius: 100, borderTopRightRadius: 100 }, gaugeNeedle: { position: 'absolute', left: 70, top: 46, width: 45, height: 2, backgroundColor: C.blue, transform: [{ rotate: '-37deg' }] }, gaugeValue: { marginBottom: 7, color: '#347F9B', fontSize: 22, fontWeight: '700' }, gaugeUnit: { fontSize: 13, fontWeight: '500' },
-  profileScroll: { paddingHorizontal: 17, paddingTop: 9, paddingBottom: 20 }, profileHeading: { marginTop: 3, color: C.ink, fontSize: 19, fontWeight: '700', textAlign: 'center' }, profileHero: { alignItems: 'center', paddingTop: 12, paddingBottom: 18 }, avatar: { width: 82, height: 82, overflow: 'hidden', borderWidth: 3, borderColor: C.white, borderRadius: 42, backgroundColor: '#E8F0DF', elevation: 2 }, avatarImage: { width: '100%', height: '100%' }, profileName: { color: C.ink, fontSize: 15, fontWeight: '700', marginTop: 9 }, profileEmail: { color: '#969D98', fontSize: 10, marginTop: 3 }, profileMenu: { overflow: 'hidden', borderRadius: 13, backgroundColor: C.white, elevation: 2 }, menuRow: { minHeight: 53, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EBEEEA' }, menuTitle: { flex: 1, color: C.ink, fontSize: 12, fontWeight: '600' }, menuValue: { color: '#969D98', fontSize: 10, marginTop: 2 }, profileFootnote: { marginTop: 14, color: '#A2A8A3', fontSize: 10, textAlign: 'center' },
+  mapScreen: { flex: 1, backgroundColor: '#E6EBE1' }, mapHeader: { height: 48, zIndex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 16, paddingRight: 8, backgroundColor: '#FFFFFFF0' }, mapOverlay: { position: 'absolute', zIndex: 2, top: 58, left: 12, right: 12 }, mapSearch: { borderColor: '#E5EAE2' }, mapNotice: { position: 'absolute', zIndex: 1, top: 120, left: 12, right: 12, padding: 8, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: '#FFFFFFEE' }, mapNoticeText: { flex: 1, color: '#6E786F', fontSize: 9, lineHeight: 13 }, mapCount: { position: 'absolute', bottom: 12, left: 12, paddingHorizontal: 10, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, backgroundColor: '#FFFFFFF2', elevation: 2 }, mapCountText: { color: '#6F7970', fontSize: 10 }, markerBubble: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, borderRadius: 19, borderBottomLeftRadius: 5, elevation: 4 }, mapDeviceCard: { position: 'absolute', bottom: 12, left: 12, right: 12, minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 9, padding: 10, borderRadius: 13, backgroundColor: C.white, elevation: 5, shadowColor: '#162015', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }, mapDeviceName: { color: C.ink, fontSize: 13, fontWeight: '700' }, mapDeviceMeta: { color: C.muted, fontSize: 10, marginTop: 3 },
+  standardScroll: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 22 }, infoNote: { marginTop: 11, padding: 10, flexDirection: 'row', gap: 7, alignItems: 'center', borderWidth: 1, borderColor: '#E7EDDE', borderRadius: 10, backgroundColor: '#F4F8EE' }, infoNoteText: { flex: 1, color: '#6F7A6E', fontSize: 10, lineHeight: 15 }, statsRow: { flexDirection: 'row', gap: 10, marginTop: 12 }, statCard: { flex: 1, minHeight: 102, padding: 11, borderRadius: 12, backgroundColor: C.white, elevation: 1 }, statIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 9 }, statValue: { marginTop: 8, color: C.ink, fontSize: 19, fontWeight: '700' }, statLabel: { marginTop: 1, color: C.muted, fontSize: 10 }, sectionTitleSmall: { color: C.ink, fontSize: 13, fontWeight: '700', marginTop: 16, marginBottom: 8 }, metricCard: { marginTop: 10, padding: 13, borderRadius: 13, backgroundColor: C.white, elevation: 2, shadowColor: '#192512', shadowOpacity: 0.04, shadowRadius: 7, shadowOffset: { width: 0, height: 2 } }, metricHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }, metricName: { color: C.ink, fontSize: 12, fontWeight: '700' }, metricCaption: { color: '#999F9A', fontSize: 9, marginTop: 2 }, metricValue: { marginTop: 12, color: C.greenDark, fontSize: 25, fontWeight: '700', textAlign: 'center' }, metricFooter: { minHeight: 27, marginTop: 10, paddingTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line }, metricFooterText: { color: '#9CA39D', fontSize: 9 }, gauge: { height: 106, alignItems: 'center', justifyContent: 'flex-end', overflow: 'hidden' }, gaugeArc: { position: 'absolute', bottom: 0, width: 160, height: 80, borderWidth: 12, borderBottomWidth: 0, borderColor: '#C8E0E8', borderTopLeftRadius: 100, borderTopRightRadius: 100 }, gaugeNeedle: { position: 'absolute', left: 70, top: 46, width: 45, height: 2, backgroundColor: C.blue, transform: [{ rotate: '-37deg' }] }, gaugeValue: { marginBottom: 7, color: '#347F9B', fontSize: 22, fontWeight: '700' }, gaugeUnit: { fontSize: 13, fontWeight: '500' },
+  profileScroll: { paddingHorizontal: 17, paddingTop: 8, paddingBottom: 24 }, profileHeading: { marginTop: 2, color: C.ink, fontSize: 19, fontWeight: '700', textAlign: 'center' }, profileHero: { alignItems: 'center', paddingTop: 16, paddingBottom: 20 }, avatar: { width: 82, height: 82, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: 3, borderColor: C.white, borderRadius: 42, backgroundColor: '#E8F0DF', elevation: 2 }, avatarWrap: { position: 'relative' }, editPhotoButton: { position: 'absolute', bottom: -7, right: -7, width: 32, height: 32, borderRadius: 16, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, elevation: 4, shadowColor: '#15220E', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }, avatarImage: { width: '100%', height: '100%' }, profileName: { color: C.ink, fontSize: 15, fontWeight: '700', marginTop: 9 }, profileEmail: { color: '#969D98', fontSize: 10, marginTop: 3 }, profileMenu: { overflow: 'hidden', borderRadius: 13, backgroundColor: C.white, elevation: 2 }, menuRow: { minHeight: 58, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EBEEEA' }, menuTitle: { flex: 1, color: C.ink, fontSize: 12, fontWeight: '600' }, menuValue: { color: '#969D98', fontSize: 10, marginTop: 2 }, profileFootnote: { marginTop: 14, color: '#A2A8A3', fontSize: 10, textAlign: 'center' },
   detailScroll: { paddingBottom: 18 }, detailSummary: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 15, paddingBottom: 12 }, detailName: { color: C.ink, fontSize: 16, fontWeight: '700' }, detailId: { color: '#7E8780', fontSize: 10, marginTop: 3 }, detailHeard: { color: '#969D98', fontSize: 9, marginTop: 3 }, detailFields: { flexDirection: 'row', gap: 9, paddingHorizontal: 16 }, detailField: { minHeight: 58, flex: 1, padding: 10, borderRadius: 10, backgroundColor: C.white, elevation: 1 }, detailFieldLabel: { color: '#A1A7A2', fontSize: 9 }, detailFieldValue: { color: C.ink, fontSize: 11, fontWeight: '600', marginTop: 5 }, expandButton: { minHeight: 35, marginHorizontal: 16, marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 9, backgroundColor: C.greenPale }, expandButtonText: { color: C.greenDark, fontSize: 11, fontWeight: '600' }, expandedDetails: { marginHorizontal: 16, marginTop: 8, padding: 10, borderRadius: 10, backgroundColor: C.white }, expandedLine: { color: '#727B74', fontSize: 10, lineHeight: 16 }, bold: { color: '#465047', fontWeight: '700' }, outputGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, paddingHorizontal: 16 }, outputCard: { position: 'relative', width: '48%', minHeight: 74, padding: 10, borderRadius: 11, backgroundColor: C.white, elevation: 1 }, outputLabel: { color: C.muted, fontSize: 9 }, outputValue: { color: C.ink, fontSize: 14, fontWeight: '700', marginTop: 6, paddingRight: 12 }, outputDot: { position: 'absolute', right: 9, bottom: 10, width: 10, height: 10, borderRadius: 6 }, detailSectionHeader: { marginHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, miniMap: { height: 170, marginHorizontal: 16, overflow: 'hidden', borderRadius: 11, backgroundColor: '#E9EEE6' }, miniMapMessage: { position: 'absolute', left: 10, right: 10, top: 10, padding: 9, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 8, backgroundColor: '#FFFFFFEE' }, miniMapText: { flex: 1, color: '#70796F', fontSize: 10 }, detailActions: { flexDirection: 'row', gap: 9, marginHorizontal: 16, marginTop: 11 },
   profileFootnote: { marginTop: 14, color: '#A2A8A3', fontSize: 10, textAlign: 'center' },
   noticeDate: { marginHorizontal: 16, marginTop: 14, marginBottom: 7, color: '#8B938D', fontSize: 10, fontWeight: '700' }, noticeRow: { minHeight: 69, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E8ECE7', backgroundColor: C.white }, noticeImage: { width: 38, height: 38, borderRadius: 20 }, noticeTitle: { color: C.ink, fontSize: 11, fontWeight: '700' }, noticeLocation: { color: '#969D98', fontSize: 9, marginTop: 3 }, noticeTime: { alignItems: 'flex-end', gap: 4 }, noticeTimeText: { color: '#9AA19B', fontSize: 9 }, unreadCount: { minWidth: 17, height: 17, paddingHorizontal: 4, overflow: 'hidden', borderRadius: 9, backgroundColor: C.green, color: C.white, fontSize: 9, textAlign: 'center', textAlignVertical: 'center' },
