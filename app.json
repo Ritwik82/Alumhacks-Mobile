@@ -20,6 +20,12 @@
         {
           "photosPermission": "Let Alumhacks access your photo library to choose a profile photo."
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Alumhacks to show your current position on the device map."
+        }
       ]
     ],
     "android": {
