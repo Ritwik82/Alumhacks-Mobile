@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Alumhacks Mobile",
+    "slug": "alumhacks-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.alumhacks.mobile",
+      "usesCleartextTraffic": true
+    },
+    "ios": {
+      "bundleIdentifier": "com.alumhacks.mobile",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Connect to Alumhacks running on your computer over Wi-Fi.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    }
+  }
+}

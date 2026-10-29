@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f8f8f6" />
+  <title>Ginjer · IoT Monitor</title>
+  <link rel="stylesheet" href=".od-frames/layout.css" />
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
+  <style>
+    :root {
+      --phone-screen-width: 360px;
+      --phone-screen-height: 800px;
+      --phone-safe-top: 0px;
+      --phone-safe-bottom: 28px;
+      --phone-bezel: 10px;
+      --phone-screen-radius: 40px;
+      --phone-outer-radius: 50px;
+      --phone-screen-bg: #f7f8f5;
+      --phone-stage-bg: #e8e9e6;
+      --green: #81af27;
+      --green-dark: #6d9820;
+      --green-pale: #edf5df;
+      --ink: #262a2c;
+      --muted: #8b9091;
+      --line: #eceeeb;
+      --surface: #fff;
+      --canvas: #f7f8f5;
+      --red: #f16e63;
+      --amber: #f2bd4b;
+      --blue: #36a9d4;
+      --shadow: 0 3px 12px rgba(34, 43, 29, .075);
+      --shadow-soft: 0 2px 8px rgba(34, 43, 29, .06);
+      --radius-card: 13px;
+      --font: Roboto, "Arial", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body { display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 10%, #fbfcfa 0, transparent 38%), var(--phone-stage-bg); color: var(--ink); font-family: var(--font); }
+    button, input, select { color: inherit; font: inherit; }
+    button { cursor: pointer; }
+    .phone-frame { position: relative; width: calc(var(--phone-screen-width) + var(--phone-bezel) * 2); height: calc(var(--phone-screen-height) + var(--phone-bezel) * 2); padding: var(--phone-bezel); border-radius: var(--phone-outer-radius); background: linear-gradient(145deg, #41454a, #181a1d 56%, #08090a); box-shadow: inset 0 0 0 1px #ffffff29, 0 28px 68px -22px #11151d88, 0 8px 20px #11151d35; isolation: isolate; }
+    .phone-frame::before, .phone-frame::after { content: ""; position: absolute; z-index: -1; top: 100px; bottom: 100px; width: 2px; background: linear-gradient(transparent, #ffffff22 20%, transparent 42%, transparent 72%, #ffffff14 90%, transparent); }
+    .phone-frame::before { left: 0; } .phone-frame::after { right: 0; }
+    .hardware-button { position: absolute; width: 4px; border-radius: 3px; background: linear-gradient(90deg,#08090b,#2a2d33 60%,#08090b); }
+    .hardware-button.volume { left: -3px; top: 215px; height: 82px; } .hardware-button.power { right: -3px; top: 264px; height: 78px; }
+    .phone-screen { position: relative; width: var(--phone-screen-width); height: var(--phone-screen-height); overflow: hidden; border-radius: var(--phone-screen-radius); background: var(--canvas); }
+    .phone-content { position: absolute; inset: 0; overflow: hidden; padding: 0; background: var(--canvas); }
+    .app { position: absolute; inset: 0 0 var(--phone-safe-bottom); display: grid; grid-template-rows: minmax(0,1fr) auto; min-height: 0; background: var(--canvas); }
+    .app.no-tabs { grid-template-rows: minmax(0,1fr); }
+    .screen { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: none; background: var(--canvas); }
+    .screen::-webkit-scrollbar { display: none; }
+    .view-pad { padding: 12px 16px 22px; }
+    .top-search { min-height: 45px; display: flex; align-items: center; gap: 5px; padding: 0 6px 0 12px; border-radius: 12px; background: #fff; box-shadow: var(--shadow-soft); }
+    .top-search input { flex: 1; min-width: 0; height: 42px; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 13px; }
+    .top-search input::placeholder { color: #b0b4b2; opacity: 1; }
+    .icon-btn { width: 34px; height: 36px; padding: 0; border: 0; display: inline-grid; place-items: center; border-radius: 9px; background: transparent; color: #6c7371; }
+    .icon-btn:hover, .icon-btn:focus-visible { color: var(--green-dark); background: #f3f7ed; outline: none; }
+    .icon-btn svg, .line-icon { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .section-heading { display: flex; justify-content: space-between; align-items: center; margin: 17px 2px 10px; }
+    .section-heading h1, .section-heading h2 { margin: 0; font-size: 18px; line-height: 1.25; font-weight: 650; letter-spacing: -.25px; }
+    .section-heading .count { color: var(--muted); font-size: 11px; }
+    .device-list { display: grid; gap: 9px; }
+    .device-card { min-height: 111px; position: relative; display: grid; grid-template-columns: 53px minmax(0,1fr) 65px; gap: 9px; padding: 11px 10px; border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow); cursor: pointer; transition: transform .16s ease, box-shadow .16s ease; }
+    .device-card:active { transform: scale(.99); box-shadow: var(--shadow-soft); }
+    .device-visual { width: 52px; height: 55px; align-self: start; display: grid; place-items: center; border-radius: 10px; background: #f3f6ef; color: #6e932f; }
+    .device-visual svg { width: 39px; height: 39px; overflow: visible; }
+    .device-main { min-width: 0; padding-top: 1px; }
+    .device-title { display: block; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; line-height: 18px; font-weight: 650; }
+    .device-id { display: block; margin-top: 1px; color: #8e9491; font-size: 10px; line-height: 15px; letter-spacing: .02em; }
+    .chips { display: flex; gap: 5px; margin-top: 9px; min-width: 0; }
+    .chip { max-width: 84px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: inline-flex; align-items: center; height: 21px; padding: 0 7px; border-radius: 6px; font-size: 9px; line-height: 1; font-weight: 600; }
+    .chip.green { color: #6a9821; background: #edf5df; } .chip.red { color: #db5e55; background: #fff0ee; } .chip.amber { color: #bc8619; background: #fff5dc; } .chip.blue { color: #358fb5; background: #e9f5fa; }
+    .device-meta { display: flex; flex-direction: column; align-items: flex-end; min-width: 0; padding-top: 1px; }
+    .last-label { display: block; color: #a1a6a3; font-size: 9px; line-height: 13px; white-space: nowrap; }
+    .last-time { display: block; max-width: 100%; color: #535a56; font-size: 9px; line-height: 14px; text-align: right; white-space: nowrap; }
+    .down-chevron { margin-top: auto; width: 23px; height: 23px; display: grid; place-items: center; border-radius: 50%; color: var(--green); background: #f1f7e8; }
+    .down-chevron svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2; }
+    .empty-state { padding: 30px 14px; text-align: center; color: var(--muted); font-size: 13px; }
+    .bottom-nav { min-height: 62px; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); align-items: center; padding: 3px 8px 0; border-top: 1px solid #eff0ed; background: rgba(255,255,255,.98); box-shadow: 0 -3px 14px #22291a08; }
+    .nav-item { height: 56px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 3px; border: 0; background: transparent; color: #969b98; font-size: 9px; line-height: 12px; font-weight: 550; }
+    .nav-item svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .nav-item.active { color: var(--green-dark); font-weight: 650; }
+    .nav-item:focus-visible { outline: 2px solid #9cc95a; outline-offset: -3px; border-radius: 10px; }
+    /* Locations */
+    .map-screen { position: relative; width: 100%; height: 100%; min-height: 0; overflow: hidden; background: #e9eee6; }
+    #interactive-map, #device-map { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; min-height: 0; background: #e9eee6; }
+    .map-top { position: absolute; top: 12px; left: 12px; right: 12px; z-index: 500; }
+    .map-screen.full-map .map-top { top: 58px; }
+    .map-screen.full-map .page-bar { position: absolute; z-index: 600; inset: 0 0 auto; }
+    .map-screen .leaflet-top { top: 74px; }
+    .map-screen.full-map .leaflet-top { top: 120px; }
+    .leaflet-container { font: inherit; }
+    .leaflet-control-zoom a { color: #4e5b4c !important; }
+    .leaflet-control-attribution { font-size: 9px !important; }
+    .device-map-icon { border: 0; background: transparent; }
+    .device-map-icon span { display: grid; width: 36px; height: 36px; place-items: center; border: 3px solid #fff; border-radius: 50% 50% 50% 8px; transform: rotate(-45deg); background: var(--marker-color,#82ae25); color: #fff; box-shadow: 0 2px 8px #20291d55; }
+    .device-map-icon svg { width: 17px; height: 17px; transform: rotate(45deg); stroke: currentColor; fill: none; stroke-width: 1.8; }
+    .map-fab { position: absolute; z-index: 500; right: 14px; bottom: 104px; width: 43px; height: 43px; display: grid; place-items: center; border: 0; border-radius: 50%; background: #fff; color: #657065; box-shadow: var(--shadow); }
+    .map-fab svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .map-bottom-caption, .map-empty-note { position: absolute; z-index: 400; left: 12px; bottom: 14px; max-width: calc(100% - 72px); padding: 8px 11px; border: 1px solid #e8ece4; border-radius: 10px; background: #ffffffed; color: #727a70; box-shadow: var(--shadow-soft); font-size: 11px; line-height: 1.4; }
+    .map-empty-note { top: 70px; bottom: auto; max-width: calc(100% - 24px); color: #697568; }
+    /* Analytics */
+    .screen-title { margin: 5px 2px 13px; font-size: 19px; line-height: 24px; font-weight: 650; letter-spacing: -.35px; }
+    .selector { width: 100%; min-height: 43px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border: 1px solid #e9ece7; border-radius: 10px; background: #fff; box-shadow: var(--shadow-soft); font-size: 12px; font-weight: 550; }
+    .selector .leading { display: flex; align-items: center; gap: 8px; }
+    .selector svg { width: 16px; height: 16px; fill: none; stroke: #818883; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .metric-list { display: grid; gap: 11px; margin-top: 12px; }
+    .metric-card { padding: 13px 14px 11px; border-radius: 13px; background: #fff; box-shadow: var(--shadow); }
+    .metric-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .metric-name { display: block; font-size: 12px; line-height: 16px; font-weight: 650; }
+    .metric-caption { display: block; margin-top: 1px; color: #969c98; font-size: 9px; line-height: 13px; }
+    .metric-menu { border: 0; padding: 0; width: 25px; height: 25px; display: grid; place-items: center; background: transparent; color: #9aa09c; }
+    .metric-menu svg { width: 17px; height: 17px; fill: currentColor; }
+    .gauge-wrap { position: relative; height: 94px; margin: 8px auto 4px; max-width: 215px; }
+    .gauge-wrap svg { width: 100%; height: 100%; overflow: visible; }
+    .gauge-number { position: absolute; left: 50%; bottom: 5px; transform: translateX(-50%); color: #348bb0; font-size: 27px; font-weight: 550; letter-spacing: -.6px; }
+    .gauge-unit { position: absolute; bottom: 7px; left: calc(50% + 32px); color: #8d9697; font-size: 8px; }
+    .gauge-scale { position: absolute; left: 9px; right: 9px; bottom: -1px; display: flex; justify-content: space-between; color: #a5aaa8; font-size: 8px; }
+    .metric-value { margin-top: 15px; min-height: 56px; display: grid; place-items: center; color: var(--green-dark); font-size: 23px; line-height: 1.1; font-weight: 650; }
+    .metric-value.off { color: #e37569; }
+    .metric-footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid #f0f1ee; color: #a0a6a2; font-size: 8px; line-height: 12px; }
+    .metric-footer span { white-space: nowrap; }
+    /* Page bars */
+    .page-bar { position: sticky; top: 0; z-index: 20; min-height: 48px; display: grid; grid-template-columns: 42px minmax(0,1fr) 42px; align-items: center; gap: 4px; padding: 0 10px; background: #fafafa; box-shadow: 0 2px 8px #20291d0a; }
+    .page-bar h1 { margin: 0; text-align: center; font-size: 15px; font-weight: 650; }
+    .page-bar .icon-btn { justify-self: center; }
+    .page-bar .page-actions { display: flex; justify-content: flex-end; gap: 1px; }
+    .page-bar.notifications-bar { grid-template-columns: 34px minmax(0,1fr); padding: 0 9px; gap: 5px; }
+    .notification-search { min-height: 35px; display: flex; align-items: center; padding: 0 5px 0 9px; border-radius: 9px; background: #f7f8f6; }
+    .notification-search input { flex: 1; min-width: 0; border: 0; outline: 0; height: 34px; background: transparent; font-size: 11px; }
+    .notification-search input::placeholder { color: #a9afac; }
+    .notification-search .icon-btn { width: 29px; height: 31px; }
+    .notice-list { display: grid; }
+    .notice-date { margin: 15px 17px 7px; color: #858c88; font-size: 10px; line-height: 14px; font-weight: 600; }
+    .notice-row { min-height: 67px; display: grid; grid-template-columns: 38px minmax(0,1fr) auto; align-items: center; gap: 9px; padding: 8px 15px; border-bottom: 1px solid #edeeeb; background: #fff; }
+    .notice-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; }
+    .notice-icon svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+    .notice-icon.red { color: #e45f57; background: #fff0ed; } .notice-icon.amber { color: #bf8c24; background: #fff6de; } .notice-icon.green { color: #729b30; background: #edf5df; } .notice-icon.blue { color: #3e94b4; background: #e7f3f7; }
+    .notice-copy { min-width: 0; }
+    .notice-title { display: block; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; line-height: 15px; font-weight: 650; }
+    .notice-device { display: block; margin-top: 2px; color: #929895; font-size: 9px; line-height: 12px; }
+    .notice-time { align-self: start; padding-top: 4px; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; color: #9ba19e; font-size: 8px; line-height: 11px; white-space: nowrap; }
+    .unread { min-width: 15px; height: 15px; display: inline-grid; place-items: center; padding: 0 4px; border-radius: 99px; background: var(--green); color: white; font-size: 8px; font-weight: 650; }
+    /* Profile */
+    .profile-view { padding: 11px 18px 20px; }
+    .profile-heading { margin: 4px 0 15px; text-align: center; font-size: 18px; line-height: 24px; font-weight: 650; }
+    .profile-hero { display: flex; flex-direction: column; align-items: center; padding: 7px 0 19px; }
+    .avatar { width: 82px; height: 82px; overflow: hidden; border-radius: 50%; display: grid; place-items: center; border: 3px solid #fff; background: linear-gradient(145deg,#e7efdc,#c9dcb0); box-shadow: 0 2px 10px #34462620; color: #688e2c; }
+    .avatar svg { width: 72px; height: 72px; }
+    .profile-name { display: block; margin-top: 10px; font-size: 15px; line-height: 19px; font-weight: 650; }
+    .profile-email { display: block; margin-top: 3px; color: #969c98; font-size: 10px; line-height: 14px; }
+    .profile-menu { overflow: hidden; border-radius: 13px; background: #fff; box-shadow: var(--shadow); }
+    .menu-row { width: 100%; min-height: 53px; display: grid; grid-template-columns: 26px minmax(0,1fr) 16px; align-items: center; gap: 11px; padding: 0 14px; border: 0; border-bottom: 1px solid #f0f1ee; background: #fff; text-align: left; }
+    .menu-row:last-child { border-bottom: 0; }
+    .menu-row .line-icon { width: 18px; height: 18px; color: var(--green-dark); }
+    .menu-label { font-size: 11px; line-height: 15px; font-weight: 550; }
+    .menu-value { display: block; margin-top: 2px; color: #9ba19e; font-size: 9px; line-height: 12px; font-weight: 400; }
+    .menu-chevron { width: 15px; height: 15px; stroke: #aeb4b0; fill: none; stroke-width: 1.7; }
+    .logout-row { width: 100%; min-height: 49px; margin-top: 12px; display: flex; align-items: center; gap: 12px; padding: 0 15px; border: 0; border-radius: 12px; background: #fff; color: #df655b; box-shadow: var(--shadow-soft); text-align: left; font-size: 11px; font-weight: 600; }
+    .logout-row svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    /* Detail and edit */
+    .detail-body { padding: 12px 15px 22px; }
+    .detail-summary { display: grid; grid-template-columns: 65px minmax(0,1fr); gap: 12px; align-items: center; padding: 12px; border-radius: 13px; background: #fff; box-shadow: var(--shadow); }
+    .detail-summary .device-visual { width: 63px; height: 63px; }
+    .detail-summary .device-visual svg { width: 46px; height: 46px; }
+    .detail-summary .device-title { font-size: 14px; }
+    .detail-last { margin-top: 5px; color: #959b98; font-size: 9px; line-height: 14px; }
+    .detail-id { color: #747b77; font-size: 9px; line-height: 14px; }
+    .detail-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .detail-field { min-height: 55px; padding: 9px 10px; border-radius: 10px; background: #fff; box-shadow: var(--shadow-soft); }
+    .detail-field label { display: block; color: #a0a6a2; font-size: 9px; line-height: 12px; }
+    .detail-field strong { display: block; margin-top: 4px; font-size: 10px; line-height: 13px; font-weight: 600; }
+    .more-button { width: 100%; min-height: 34px; margin-top: 7px; display: flex; align-items: center; justify-content: center; gap: 5px; border: 0; border-radius: 9px; color: #719b2a; background: #eef5e3; font-size: 10px; font-weight: 600; }
+    .more-button svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2; }
+    .detail-section-title { margin: 14px 2px 8px; font-size: 12px; line-height: 16px; font-weight: 650; }
+    .output-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .output-card { min-height: 76px; position: relative; padding: 10px; border-radius: 11px; background: #fff; box-shadow: var(--shadow-soft); }
+    .output-card span { display: block; color: #909792; font-size: 9px; line-height: 13px; }
+    .output-card strong { display: block; margin-top: 5px; font-size: 13px; line-height: 16px; font-weight: 650; }
+    .output-state { position: absolute; right: 10px; bottom: 10px; width: 12px; height: 12px; border: 3px solid #dff0bc; border-radius: 50%; background: var(--green); }
+    .output-state.red { border-color: #fde1dd; background: var(--red); } .output-state.amber { border-color: #fff0c7; background: var(--amber); }
+    .mini-map { height: 220px; position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 11px; background: #eef0e3; box-shadow: var(--shadow-soft); }
+    .mini-map-button { width: 100%; min-height: 37px; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid #e4ebd9; border-radius: 9px; background: #f3f8ea; color: #70962b; font-size: 10px; font-weight: 600; }
+    .mini-map-button svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+    .detail-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 9px; }
+    .action-secondary, .action-primary { min-height: 39px; padding: 0 9px; border-radius: 9px; font-size: 10px; font-weight: 600; }
+    .action-secondary { border: 1px solid #e4e8df; background: #fff; color: #69716a; }
+    .action-primary { border: 0; background: var(--green); color: #fff; box-shadow: 0 2px 5px #81af2738; }
+    .edit-avatar-row { display: flex; justify-content: center; margin: 13px 0 16px; }
+    .edit-avatar { position: relative; }
+    .avatar-edit { position: absolute; right: -2px; bottom: 0; width: 25px; height: 25px; display: grid; place-items: center; border: 2px solid #fff; border-radius: 50%; background: var(--green); color: white; }
+    .avatar-edit svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2; }
+    .form-list { display: grid; gap: 9px; }
+    .form-field { min-height: 51px; display: grid; grid-template-columns: 25px minmax(0,1fr); align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid #eceeea; border-radius: 10px; background: #fff; }
+    .form-field svg { width: 17px; height: 17px; stroke: #8cae50; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .form-field input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 11px; }
+    .form-field input::placeholder { color: #a4aaa6; }
+    /* Sheets */
+    .scrim { position: absolute; z-index: 30; inset: 0; display: flex; align-items: flex-end; background: #111a16a6; opacity: 1; transition: opacity .18s ease; }
+    .sheet { width: 100%; max-height: 83%; overflow: auto; padding: 8px 18px 22px; border-radius: 20px 20px 0 0; background: #fff; box-shadow: 0 -8px 28px #0c120e25; animation: sheet-in .22s ease-out; }
+    @keyframes sheet-in { from { transform: translateY(20px); opacity: .7; } to { transform: translateY(0); opacity: 1; } }
+    .sheet-grabber { width: 34px; height: 4px; margin: 1px auto 13px; border-radius: 4px; background: #d8ddd7; }
+    .sheet h2 { margin: 0; text-align: center; font-size: 16px; line-height: 22px; font-weight: 650; }
+    .sheet-subtitle { margin: 5px auto 17px; max-width: 270px; color: #969d98; text-align: center; font-size: 10px; line-height: 15px; }
+    .downlink-illustration { width: 86px; height: 62px; margin: 0 auto 10px; display: grid; place-items: center; border-radius: 12px; background: #f4f8ed; color: var(--green); }
+    .downlink-illustration svg { width: 49px; height: 49px; stroke: currentColor; fill: none; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
+    .sheet-field { min-height: 46px; margin-top: 9px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border: 1px solid #e6eae2; border-radius: 9px; color: #505851; background: #fff; font-size: 11px; }
+    .sheet-field .field-label { color: #9ba29b; font-size: 9px; }
+    .sheet-field select { width: 56%; border: 0; outline: 0; appearance: none; background: transparent; text-align: right; font-size: 10px; }
+    .sheet-actions { display: grid; grid-template-columns: 1fr 1.3fr; gap: 9px; margin-top: 16px; }
+    .filter-options { display: grid; gap: 7px; margin: 14px 0 4px; }
+    .filter-option { min-height: 43px; display: flex; align-items: center; justify-content: space-between; padding: 0 11px; border: 1px solid #edf0eb; border-radius: 9px; font-size: 11px; }
+    .filter-option input { accent-color: var(--green); width: 16px; height: 16px; }
+    .toast { position: absolute; z-index: 45; left: 50%; bottom: calc(var(--phone-safe-bottom) + 69px); max-width: calc(100% - 36px); transform: translateX(-50%); padding: 10px 14px; border-radius: 99px; background: #29332a; color: #fff; box-shadow: 0 5px 18px #0003; font-size: 10px; white-space: nowrap; animation: toast-in .18s ease-out; }
+    @keyframes toast-in { from { transform: translate(-50%, 8px); opacity: 0; } to { transform: translate(-50%,0); opacity: 1; } }
+    .detail-expand { padding: 9px 10px; margin-top: 8px; border-radius: 10px; background: #fff; color: #747c75; font-size: 9px; line-height: 14px; box-shadow: var(--shadow-soft); }
+    .detail-expand strong { color: #505851; font-weight: 600; }
+    .map-quick-card { position: absolute; z-index: 6; left: 15px; right: 15px; bottom: 70px; display: grid; grid-template-columns: 34px 1fr auto; gap: 9px; align-items: center; padding: 11px; border-radius: 12px; background: #fff; box-shadow: var(--shadow); }
+    .map-quick-card .notice-icon { width: 31px; height: 31px; }
+    .map-quick-title { display: block; font-size: 10px; font-weight: 650; }
+    .map-quick-sub { display: block; margin-top: 2px; color: #929a94; font-size: 8px; }
+    @media (max-width: 480px) {
+      body { display: block; padding: 0; }
+      .phone-frame { width: 100%; height: 100dvh; padding: 0; border-radius: 0; background: none; box-shadow: none; }
+      .phone-frame::before, .phone-frame::after, .hardware-button { display: none; }
+      .phone-screen { width: 100%; height: 100%; border-radius: 0; }
+      .app { bottom: max(var(--phone-safe-bottom), env(safe-area-inset-bottom)); }
+    }
+    @media (max-height: 730px) and (min-width: 481px) { .phone-frame { zoom: .84; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+    /* Figma/PDF parity: reference export is a borderless 377×838 mobile canvas. */
+    :root {
+      --phone-screen-width: 377px;
+      --phone-screen-height: 838px;
+      --phone-safe-top: 0px;
+      --phone-safe-bottom: 0px;
+      --phone-screen-radius: 0px;
+      --canvas: #fafafa;
+      --phone-stage-bg: #f2f2f2;
+      --green: #82ae25;
+      --green-dark: #79a91e;
+      --ink: #303030;
+      --muted: #989898;
+      --line: #ededed;
+    }
+    body { background: #f2f2f2; }
+    .phone-frame { width: var(--phone-screen-width); height: var(--phone-screen-height); padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
+    .phone-frame::before, .phone-frame::after, .hardware-button { display: none; }
+    .phone-screen { width: var(--phone-screen-width); height: var(--phone-screen-height); border-radius: 0; }
+    .device-card { min-height: 117px; grid-template-columns: 44px minmax(0,1fr) 97px; gap: 8px; padding: 11px 10px; border-radius: 10px; }
+    .device-visual { width: 42px; height: 42px; border: 1px solid #eceeed; border-radius: 6px; background: #fff; }
+    .device-visual img { display: block; width: 100%; height: 100%; object-fit: contain; border-radius: 5px; }
+    .device-visual svg { width: 34px; height: 34px; }
+    .device-title { font-size: 15px; line-height: 19px; font-weight: 650; }
+    .device-id { font-size: 10px; line-height: 14px; }
+    .chips { margin-top: 12px; gap: 8px; }
+    .chip { height: 26px; max-width: 88px; padding: 0 9px; border-radius: 14px; font-size: 10px; font-weight: 500; }
+    .device-meta { padding-top: 5px; }
+    .last-label { font-size: 10px; line-height: 14px; }
+    .last-time { font-size: 10px; line-height: 15px; }
+    .down-chevron { width: 22px; height: 22px; background: transparent; }
+    .top-search { min-height: 58px; border-radius: 10px; }
+    .top-search input { height: 52px; font-size: 14px; }
+    .bottom-nav { min-height: 58px; padding: 0 8px; box-shadow: 0 -5px 14px #0000000b; }
+    .nav-item { height: 58px; gap: 1px; font-size: 11px; line-height: 14px; }
+    .nav-item svg { width: 22px; height: 22px; }
+    .notification-search { min-height: 48px; background: transparent; }
+    .page-bar.notifications-bar { min-height: 58px; margin: 12px 12px 18px; padding: 0 8px; border-radius: 10px; background: #fff; box-shadow: var(--shadow); }
+    .notification-search input { height: 44px; font-size: 14px; }
+    .notification-search .icon-btn { width: 34px; height: 38px; }
+    .notice-row { min-height: 63px; grid-template-columns: 42px minmax(0,1fr) auto; gap: 10px; padding: 8px 17px; }
+    .notice-icon { width: 40px; height: 40px; }
+    .notice-icon svg { width: 22px; height: 22px; }
+    .notice-title { font-size: 14px; line-height: 18px; }
+    .notice-device { margin-top: 2px; font-size: 11px; line-height: 14px; }
+    .notice-time { align-self: center; padding-top: 0; flex-direction: row; align-items: center; gap: 12px; font-size: 11px; line-height: 14px; }
+    .unread { min-width: 22px; height: 22px; padding: 0 6px; font-size: 11px; }
+    .profile-view { padding: 11px 17px 20px; background: #fafafa; }
+    .profile-heading { margin: 4px 0 26px; font-size: 18px; line-height: 24px; }
+    .profile-hero { display: grid; grid-template-columns: 74px minmax(0,1fr); grid-template-rows: auto auto; column-gap: 13px; align-items: center; padding: 0 0 28px; }
+    .profile-hero .avatar { grid-row: 1 / 3; }
+    .profile-hero .profile-name, .profile-hero .profile-email { grid-column: 2; }
+    .profile-hero .avatar { flex: 0 0 74px; width: 74px; height: 74px; border: 0; background: #292929; box-shadow: none; }
+    .profile-hero .avatar svg { width: 74px; height: 74px; }
+    .profile-name { margin: 0; font-size: 20px; line-height: 25px; font-weight: 500; }
+    .profile-email { margin-top: 3px; font-size: 13px; line-height: 18px; }
+    .profile-hero > span { min-width: 0; }
+    .profile-menu { border-radius: 9px; box-shadow: none; }
+    .menu-row { min-height: 57px; grid-template-columns: 28px minmax(0,1fr) 18px; gap: 8px; padding: 0 18px; }
+    .menu-row .line-icon { width: 22px; height: 22px; }
+    .menu-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+    .menu-chevron { width: 20px; height: 20px; stroke: #333; stroke-width: 2.5; }
+    .logout-row { min-height: 57px; margin-top: 32px; padding: 0 18px; border-radius: 9px; box-shadow: none; font-size: 16px; font-weight: 400; }
+    .logout-row svg { width: 21px; height: 21px; margin-left: auto; }
+    .api-panel { margin: 10px 0 0; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; box-shadow: none; }
+    .api-panel-sub { margin: 3px 0 6px; }
+    .api-panel-button { min-height: 27px; }
+    .detail-body { padding: 10px 17px 20px; }
+    .detail-summary { grid-template-columns: 64px minmax(0,1fr); gap: 12px; padding: 12px 8px 15px; border-bottom: 1px solid #e6e6e6; border-radius: 0; background: transparent; box-shadow: none; }
+    .detail-summary .device-visual { width: 63px; height: 63px; }
+    .detail-fields { gap: 12px; margin-top: 0; padding: 13px 8px; border-bottom: 1px solid #e6e6e6; }
+    .detail-field { min-height: 54px; padding: 5px 0; border-radius: 0; background: transparent; box-shadow: none; }
+    .detail-field label { font-size: 12px; line-height: 17px; }
+    .detail-field strong { margin-top: 3px; font-size: 14px; line-height: 18px; }
+    .detail-section-title { margin: 14px 2px 8px; font-size: 14px; line-height: 18px; }
+    .output-grid { gap: 16px; }
+    .output-card { min-height: 105px; padding: 14px; border-radius: 11px; }
+    .output-card span { font-size: 12px; line-height: 16px; }
+    .output-card strong { margin-top: 7px; font-size: 16px; line-height: 20px; }
+    .mini-map { height: 224px; background-image: none; }
+    .mini-map svg { display: none; }
+    .mini-map-button { display: flex; }
+    .page-bar { min-height: 48px; background: #fafafa; box-shadow: 0 2px 8px #20291d0a; }
+    .page-bar h1 { font-size: 18px; }
+    .selector { min-height: 42px; padding: 0 16px; border: 1px solid #dceac4; border-radius: 10px; font-size: 14px; font-weight: 600; }
+    .selector .leading { gap: 0; }
+    .selector .leading > svg { display: none; }
+    .selector > svg { stroke: var(--green); width: 18px; height: 18px; }
+    .metric-list { gap: 12px; margin-top: 18px; }
+    .metric-card { padding: 15px 17px 12px; border-radius: 10px; }
+    .metric-name { font-size: 14px; line-height: 19px; }
+    .metric-caption { font-size: 11px; line-height: 14px; }
+    .gauge-wrap { height: 135px; max-width: 215px; }
+    .gauge-number { font-size: 28px; }
+    .metric-value { min-height: 78px; margin-top: 18px; font-size: 28px; }
+    .metric-footer { margin-top: 10px; padding-top: 6px; border-top: 0; font-size: 10px; line-height: 14px; }
+    .form-list { gap: 13px; }
+    .form-field { position: relative; min-height: 59px; padding: 10px 14px 5px; border: 1.5px solid #85818a; border-radius: 11px; background: #fff; }
+    .form-field::before { content: attr(data-label); position: absolute; top: -9px; left: 12px; padding: 0 4px; background: #fff; color: var(--green); font-size: 12px; line-height: 16px; }
+    .form-field input { font-size: 16px; color: #777; }
+    .edit-avatar-row { margin: 18px 0 32px; }
+    .edit-avatar .avatar { width: 84px; height: 84px; border: 0; background: url("assets/reference/profile-photo.png") center/cover no-repeat; box-shadow: none; }
+    .edit-avatar .avatar svg { display: none; }
+    .avatar-edit { opacity: 0; width: 25px; height: 25px; }
+    @media (max-width: 480px) {
+      body { min-height: 100dvh; }
+      .phone-frame, .phone-screen { width: 100%; height: 100dvh; }
+    }
+    .view-pad { padding-left: 12px; padding-right: 12px; }
+    .device-list { gap: 12px; }
+    .device-card { padding-left: 18px; }
+    .chip { width: auto; max-width: none; height: 26px; gap: 5px; padding: 0; border-radius: 0; color: #7d817f; background: transparent !important; font-size: 11px; font-weight: 400; }
+    .chip.green, .chip.red, .chip.amber, .chip.blue { color: #777; background: transparent; }
+    .chip-icon { flex: 0 0 25px; width: 25px; height: 25px; display: grid; place-items: center; border-radius: 50%; }
+    .chip-icon svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+    .chip.green .chip-icon { color: #80b52b; background: #edf5df; }
+    .chip.red .chip-icon { color: #f16e63; background: #ffe3df; }
+    .chip.amber .chip-icon { color: #ebaF22; background: #fff3d0; }
+    .chip.blue .chip-icon { color: #3ca6d5; background: #e6f5fb; }
+    .notice-date { display: none; }
+    .output-card { position: relative; }
+    .output-card .output-icon { position: absolute; top: 12px; right: 12px; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; }
+    .output-card .output-icon svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+    .output-card .output-name { color: #303030; font-size: 14px; line-height: 19px; font-weight: 650; }
+    .output-card .output-kind { margin-top: 10px; color: #a0a0a0; font-size: 13px; line-height: 16px; }
+    .mini-map[role="button"] { cursor: pointer; }
+    section[aria-label="Analytics"] .metric-caption, section[aria-label="Analytics"] .metric-menu { display: none; }
+    section[aria-label="Analytics"] .metric-value { display: flex; align-items: center; justify-content: flex-start; }
+    .login-screen { display: flex; flex-direction: column; align-items: stretch; padding: 24px 14px 10px; background: #fff; }
+    .login-brand { width: 174px; height: 74px; margin: 0 auto; }
+    .login-brand img { display: block; width: 100%; height: 100%; object-fit: contain; }
+    .login-tagline { margin: 8px 0 0; color: #9a9a9a; text-align: center; font-size: 13px; line-height: 20px; }
+    .login-illustration { align-self: center; width: 176px; height: 172px; margin: 36px auto 24px; object-fit: contain; }
+    #login-screen-form { display: grid; gap: 18px; }
+    #login-screen-form .form-field { min-height: 57px; grid-template-columns: minmax(0,1fr); }
+    #login-screen-form .form-field input { grid-column: 1; width: 100%; font-size: 15px; }
+    #login-screen-form .api-error { margin: -10px 0 -15px; }
+    #login-screen-form .api-error:empty { display: none; }
+    .login-submit { min-height: 52px; margin-top: 18px; border: 0; border-radius: 10px; background: #82ae25; color: #fff; font-size: 18px; font-weight: 600; }
+    .login-terms { margin: auto 14px 0; padding-top: 42px; color: #9a9a9a; text-align: center; font-size: 11px; line-height: 16px; }
+    .login-terms strong { color: #82ae25; font-weight: 600; }
+    .login-token-link, .login-demo-link { align-self: center; margin-top: 10px; border: 0; background: transparent; color: #779f29; font-size: 10px; }
+    .login-demo-link { margin-top: 2px; color: #a0a0a0; }
+    .live-detail .mini-map { height: 110px; background-image: none; background-color: #eef0e3; }
+    .live-detail .mini-map svg { display: block; }
+    .live-detail .mini-map-button { display: flex; }
+    .notice-icon { overflow: hidden; background: transparent !important; }
+    .notice-icon img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .api-panel { display: none; }
+    .downlink-sheet { padding: 8px 17px 14px; }
+    .downlink-sheet .sheet-subtitle { max-width: 300px; margin-bottom: 8px; font-size: 12px; line-height: 18px; }
+    .downlink-sheet .downlink-illustration { width: 120px; height: 78px; margin: 0 0 4px; border-radius: 0; background: transparent url("assets/reference/downlink-illustration.png") center/contain no-repeat; }
+    .downlink-field { position: relative; display: block; min-height: 58px; margin-top: 14px; padding: 15px 12px 4px; border: 1.5px solid #85818a; border-radius: 10px; color: transparent; background: #fff; font-size: 0; }
+    .downlink-field::before { content: attr(data-label); position: absolute; top: -9px; left: 12px; padding: 0 4px; background: #fff; color: var(--green); font-size: 12px; line-height: 16px; }
+    .downlink-field select, .downlink-field textarea { display: block; width: 100%; min-height: 28px; margin: 0; padding: 0; border: 0; outline: 0; background: transparent; color: #767676; font: inherit; font-size: 14px; }
+    .downlink-field textarea { resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
+    .downlink-sheet .sheet-actions { margin-top: 18px; }
+    .downlink-sheet .action-secondary { min-height: 42px; border: 1px solid var(--green); color: var(--green); font-size: 14px; }
+    .downlink-sheet .action-primary { min-height: 42px; font-size: 14px; }
+    .downlink-sheet [disabled] { opacity: 1; }
+    .view-pad[aria-label="Devices"] .device-list { margin-top: 19px !important; }
+    .profile-heading { margin-bottom: 15px; }
+    .screen[aria-label="Device details"] .detail-body { padding-top: 19px; padding-bottom: 38px; }
+    .screen[aria-label="Edit Profile"] .detail-body { padding-top: 10px; padding-bottom: 20px; }
+    .mini-map { margin-top: 12px; }
+    .map-screen .leaflet-control-zoom { border: 1px solid #dfe4dc; border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); }
+    .map-screen .leaflet-control-zoom a { width: 34px; height: 34px; line-height: 34px; border-bottom-color: #edf0ea; }
+    .map-quick-card { z-index: 450; bottom: 58px; min-height: 68px; grid-template-columns: 38px minmax(0,1fr) 36px; }
+    .map-quick-card .map-quick-title { font-size: 13px; line-height: 18px; }
+    .map-quick-card .map-quick-sub { font-size: 11px; line-height: 15px; }
+    .map-quick-card .map-quick-open { width: 36px; height: 36px; border: 0; border-radius: 9px; background: #f0f5e7; color: var(--green-dark); }
+    .map-tile-error { display: none; }
+    .map-screen.tile-error .map-tile-error { position: absolute; z-index: 700; top: 74px; left: 12px; right: 12px; display: block; padding: 9px 11px; border-radius: 9px; background: #fff7df; color: #815f18; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="phone-frame" data-phone-shell data-platform="neutral">
+    <span class="hardware-button volume" aria-hidden="true"></span>
+    <span class="hardware-button power" aria-hidden="true"></span>
+    <section class="phone-screen" data-phone-screen>
+      <main class="phone-content" data-phone-content>
+        <div id="app" class="app" aria-live="polite"></div>
+        <div id="overlay-root"></div>
+        <div id="toast-root" aria-live="polite"></div>
+      </main>
+    </section>
+  </div>
+  <script>
+    const icons = {
+      search: '<circle cx="11" cy="11" r="7.1"/><path d="m16.2 16.2 4 4"/>',
+      filter: '<path d="M4 5h16M7 12h10m-7 7h4"/><circle cx="8" cy="5" r="1.5" fill="currentColor"/><circle cx="15" cy="12" r="1.5" fill="currentColor"/>',
+      bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
+      settings: '<circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1a1.7 1.7 0 1 1-2.4 2.4l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.4a1.7 1.7 0 1 1-3.4 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.7 1.7 0 1 1-2.4-2.4l.1-.1a1.7 1.7 0 0 0-1.2-2.9h-.4a1.7 1.7 0 1 1 0-3.4h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.7 1.7 0 1 1 2.4-2.4l.1.1a1.7 1.7 0 0 0 2.9-1.2v-.4a1.7 1.7 0 1 1 3.4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.7 1.7 0 1 1 2.4 2.4l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.4a1.7 1.7 0 1 1 0 3.4h-.2a1.7 1.7 0 0 0-1.2 2.9Z"/>',
+      devices: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h5m-5 4h8"/>',
+      pin: '<path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.6"/>',
+      chart: '<path d="M4 20V10m5 10V4m5 16v-7m5 7V7M2 20h20"/>',
+      user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+      back: '<path d="m15 18-6-6 6-6"/>',
+      more: '<circle cx="5" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="19" cy="12" r="1" fill="currentColor"/>',
+      down: '<path d="m6 9 6 6 6-6"/>',
+      up: '<path d="m6 15 6-6 6 6"/>',
+      chevron: '<path d="m9 18 6-6-6-6"/>',
+      person: '<circle cx="12" cy="8" r="3.4"/><path d="M5 20c.6-3.1 3.1-5 7-5s6.4 1.9 7 5"/>',
+      pinSmall: '<path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2"/>',
+      battery: '<rect x="3" y="7" width="17" height="10" rx="2"/><path d="M22 10v4M6 10h9v4H6z"/>',
+      sensor: '<path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1m-8.6 8.6-2.1 2.1"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/>',
+      snow: '<path d="M12 2v20m-8.7-5 17.4-10m-17.4 0 17.4 10M9 4l3-2 3 2m-6 16 3 2 3-2M3.5 8.2 3 5l3.1.1m14.4 11.7.5 3.2-3.1-.1M3.5 15.8 3 19l3.1-.1m14.4-11.7L21 4l-3.1.1"/>',
+      water: '<path d="M12 3c-2.5 3.4-6.4 7.6-6.4 11.4a6.4 6.4 0 0 0 12.8 0C18.4 10.6 14.5 6.4 12 3Z"/><path d="M9 15c.3 1.4 1.2 2.1 2.7 2.4"/>',
+      controller: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h3m4 0h3M7 12h3m4 0h3M8 16h8"/>',
+      alert: '<path d="M10.3 3.8 2.8 17a2 2 0 0 0 1.7 3h15a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 3h.01"/>',
+      air: '<path d="M3 8h10a2.5 2.5 0 1 0-2.5-2.5M3 12h15a2.5 2.5 0 1 1-2.5 2.5M3 16h8a2.5 2.5 0 1 0-2.5 2.5"/>',
+      edit: '<path d="m4 16.5-.8 4.3 4.3-.8L19 8.5 15.5 5 4 16.5Z"/><path d="m13.8 6.7 3.5 3.5"/>',
+      mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+      phone: '<path d="M7 3H4.5a1.5 1.5 0 0 0-1.5 1.7A17 17 0 0 0 19.3 21a1.5 1.5 0 0 0 1.7-1.5V17l-4-2-2 2a13 13 0 0 1-7-7l2-2-3-5Z"/>',
+      org: '<rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V4h8v3M3 12h18m-11 0v2h4v-2"/>',
+      logout: '<path d="M10 17l5-5-5-5m5 5H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/>',
+      check: '<path d="m5 12 4 4L19 6"/>',
+      globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18m0-18a14 14 0 0 0 0 18"/>',
+      refresh: '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9a7 7 0 0 1 11.6-2L20 12M4 12l2.8 5a7 7 0 0 0 11.6-2"/>',
+      close: '<path d="m6 6 12 12M18 6 6 18"/>',
+      info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/>',
+      valve: '<path d="M4 5v14m16-14v14M4 12h5l3-5 3 10 3-5h2"/>',
+      bin: '<path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3"/>',
+      occupancy: '<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0m1-11a3 3 0 1 1 0 6m2 1a5 5 0 0 1 3 4"/>',
+      map: '<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z"/><path d="M9 3v15m6-12v15"/>'
+    };
+    const svg = (name, cls='') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.info}</svg>`;
+    const buttonIcon = (name, label, action, extra='') => `<button class="icon-btn ${extra}" type="button" aria-label="${label}" data-action="${action}">${svg(name)}</button>`;
+    const devices = [
+      {name:'Cold Chain',id:'ECFAF446947298',heard:'50 Mins',chips:[['Moderate','amber'],['Humid','blue']],kind:'snow',color:'#9cba68',loc:'Green park',output:'Cold Room'},
+      {name:'Level Sensor',id:'ECFAF4469472DD',heard:'50 Mins',chips:[['Empty','red'],['Full','green']],kind:'water',color:'#53b5d8',loc:'Tank 6',output:'Reservoir A'},
+      {name:'IO Controller',id:'ECFAF44694729A',heard:'02 Feb 2024 02:25',chips:[['ON','green'],['Full','green']],kind:'controller',color:'#86ad38',loc:'Lab Room',output:'Lab Room'},
+      {name:'Panic Button',id:'ECFAF44694729B',heard:'02 Feb 2024 02:15',chips:[['SOS','red'],['Low','amber']],kind:'alert',color:'#f17a69',loc:'John Doe · Block B',output:'Block B, level 2'},
+      {name:'Air Quality Sensor',id:'ECFAF4469472CC',heard:'02 Feb 2024 01:43',chips:[['Poor','red'],['Full','green']],kind:'air',color:'#55a9a0',loc:'Saket',output:'Saket Office'}
+    ];
+    const notices = [
+      {title:'Fill level - 80%',where:'Green park',time:'8:15 AM',color:'red',icon:'bin',count:'1'},
+      {title:'Fill Level - 85%',where:'Saket',time:'7:20 AM',color:'amber',icon:'bin',count:'1'},
+      {title:'Alert - SOS',where:'John Doe',time:'7:10 AM',color:'red',icon:'alert',count:'3'},
+      {title:'Alert - Safe',where:'John Smith',time:'7:05 AM',color:'green',icon:'check',count:'1'},
+      {title:'Water Level - 80%',where:'Tank 6',time:'6:50 AM',color:'red',icon:'water',count:'3'},
+      {title:'Water Level - 50%',where:'Tank 2',time:'6:32 AM',color:'amber',icon:'water',count:'1'},
+      {title:'Light - On',where:'Lab Room',time:'6:15 AM',color:'green',icon:'devices'}
+    ];
+    const state = {route:'login',tab:'devices',previous:'devices',device:devices[1],expanded:false,toastTimer:null,deviceFilter:'all',noticeFilter:'all',query:'',profileName:'Shaheen Ansari',profileEmail:'shaheenansari2519cs@gmail.com'};
+    const nativeBackRoutes = new Set(['login','devices','locations','analytics','profile']);
+    function announceRoute() {
+      window.ReactNativeWebView?.postMessage(JSON.stringify({type:'route',route:state.route,canGoBack:!nativeBackRoutes.has(state.route)}));
+    }
+    const app = document.getElementById('app');
+    const overlayRoot = document.getElementById('overlay-root');
+    const toastRoot = document.getElementById('toast-root');
+    const titleFor = d => d.name;
+    function thumb(kind, color) {
+      const photos = { snow:'assets/reference/device-cold-chain.png', water:'assets/reference/device-level-sensor.png', controller:'assets/reference/device-controller.png', alert:'assets/reference/device-panic-button.png', air:'assets/reference/device-air-quality.png', busylight:'assets/reference/device-busylight.png' };
+      const photo = photos[kind];
+      if (photo) return '<span class="device-visual" style="color:' + color + '"><img src="' + photo + '" alt=""></span>';
+      return '<span class="device-visual" style="color:' + color + '"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="20" fill="' + color + '14"/><g transform="translate(12 12) scale(1)">' + (icons[kind] || icons.sensor) + '</g></svg></span>';
+    }
+    function nav() {
+      const items = [['devices','Devices'],['locations','Locations'],['analytics','Analytics'],['profile','Profile']];
+      return `<nav class="bottom-nav" aria-label="Main navigation">${items.map(([key,label])=>`<button class="nav-item ${state.tab===key?'active':''}" type="button" data-tab="${key}" aria-current="${state.tab===key?'page':'false'}">${svg(key==='locations'?'pin':key==='analytics'?'chart':key==='profile'?'user':'devices')}<span>${label}</span></button>`).join('')}</nav>`;
+    }
+    function loginView() {
+      return `<section class="screen login-screen" aria-label="Sign in">
+        <div class="login-brand"><img src="assets/reference/ginjer-logo.png" alt="Ginjer" /></div>
+        <p class="login-tagline">Monitor and manage your connected devices</p>
+        <img class="login-illustration" src="assets/reference/login-illustration.png" alt="" />
+        <form id="login-screen-form">
+          <label class="form-field" data-label="Email"><input name="email" type="email" autocomplete="username" required placeholder="Email address" /></label>
+          <label class="form-field" data-label="Password"><input name="password" type="password" autocomplete="current-password" required placeholder="Password" /></label>
+          <p class="api-error" role="alert"></p>
+          <button class="login-submit" type="submit">Sign In</button>
+        </form>
+        <p class="login-terms">By signing in, you agree to Ginjer's <strong>Terms of Service</strong> and <strong>Privacy Policy</strong>.</p>
+        <button class="login-token-link" type="button" data-action="token-login">Use API token instead</button>
+        <button class="login-demo-link" type="button" data-action="preview-demo">Preview demo data</button>
+      </section>`;
+    }
+    function searchBar(placeholder='Search Devices', actionPrefix='') {
+      return `<div class="top-search"><input id="main-search" type="search" aria-label="${placeholder}" placeholder="${placeholder}" value="${state.query}" autocomplete="off" />${buttonIcon('search','Search','noop')}${buttonIcon('filter','Filter','filter')}${buttonIcon('bell','Notifications','notifications')}</div>`;
+    }
+    function deviceCard(d) {
+      const chips = d.chips.map(([value,color]) => {
+        const icon = /water|humid|empty|level/i.test(value) ? 'water' : /sos|alert/i.test(value) ? 'alert' : /poor|air|quality/i.test(value) ? 'air' : /on|occupied/i.test(value) ? 'occupancy' : /moderate|temperature/i.test(value) ? 'sensor' : 'battery';
+        return '<span class="chip '+color+'"><i class="chip-icon">'+svg(icon)+'</i><span>'+value+'</span></span>';
+      }).join('');
+      return '<article class="device-card" tabindex="0" role="button" data-device="'+d.id+'" aria-label="Open '+d.name+' details">'+thumb(d.kind,d.color)+'<div class="device-main"><span class="device-title">'+d.name+'</span><span class="device-id">'+d.id+'</span><div class="chips">'+chips+'</div></div><div class="device-meta"><span class="last-label">Last Heard</span><span class="last-time">'+d.heard+'</span><span class="down-chevron">'+svg('down')+'</span></div></article>';
+    }    function devicesView() {
+      const visible = devices.filter(d => {
+        const q = state.query.toLowerCase();
+        const matches = !q || `${d.name} ${d.id} ${d.loc} ${d.chips.map(c=>c[0]).join(' ')}`.toLowerCase().includes(q);
+        const status = d.chips.some(c => ['red','amber'].includes(c[1]));
+        return matches && (state.deviceFilter !== 'attention' || status) && (state.deviceFilter !== 'online' || d.chips.some(c=>c[0]==='Online'));
+      });
+      return `<section class="screen view-pad" aria-label="Devices">${searchBar()}<div class="device-list" id="device-list" style="margin-top:14px">${visible.map(deviceCard).join('') || '<div class="empty-state">No devices match your search.</div>'}</div></section>`;
+    }
+    function locationsView(full=false) {
+      return `<section class="screen map-screen${full?' full-map':''}" aria-label="${full?'Device map':'Locations'}"><div id="interactive-map" role="application" aria-label="Interactive device map"></div><div class="map-top">${searchBar('Search Devices')}</div></section>`;
+    }
+    function gauge() {
+      return `<div class="gauge-wrap"><svg viewBox="0 0 220 104" aria-label="Gauge from 0 to 1.3, current value 1.00"><path d="M20 88 A90 90 0 0 1 200 88" pathLength="100" fill="none" stroke="#e9f0f2" stroke-width="12" stroke-linecap="round"/><path d="M20 88 A90 90 0 0 1 200 88" pathLength="100" fill="none" stroke="#3ca4ce" stroke-width="12" stroke-linecap="round" stroke-dasharray="77 100"/><path d="M110 88 164 37" stroke="#327f9f" stroke-width="2.5" stroke-linecap="round"/><circle cx="110" cy="88" r="5" fill="#327f9f"/></svg><span class="gauge-number">1.00</span><span class="gauge-unit">m</span><div class="gauge-scale"><span>0.0</span><span>0.65</span><span>1.3</span></div></div>`;
+    }
+    function metricCard(title, caption, kind, value, id, time) {
+      const content = kind==='gauge' ? gauge() : `<div class="metric-value ${value==='Off'?'off':''}">${value}</div>`;
+      return `<article class="metric-card"><div class="metric-top"><div><span class="metric-name">${title}</span><span class="metric-caption">${caption}</span></div><button class="metric-menu" aria-label="${title} options" data-action="metric-menu">${svg('more')}</button></div>${content}<div class="metric-footer"><span>${id}</span><span>${time}</span></div></article>`;
+    }
+    function analyticsView() {
+      return `<section class="screen view-pad" aria-label="Analytics"><button class="selector" type="button" data-action="dashboard"><span class="leading">${svg('chart')}<span>Public Dashboard</span></span>${svg('down')}</button><div class="metric-list" style="margin-top:16px">${metricCard('Waste Bin (Fill Level%)','Level Sensor · Green park','gauge','1.00','ECFAF4469472DD','02 Feb 2024 02:25')}${metricCard('Desk occupancy','Busylight · Innovation Hub','value','Occupied','ECFAF4469472DD','02 Feb 2024 02:25')}${metricCard('Valve Status','IO Controller · Lab Room','value','Off','ECFAF44694729A','02 Feb 2024 02:25')}${metricCard('Air Quality','Air Quality Sensor · Saket','value','Poor','ECFAF4469472CC','02 Feb 2024 01:43')}</div></section>`;
+    }
+    function notificationsView() {
+      const filtered = notices.map((n,i)=>({n,i})).filter(({n}) => state.noticeFilter==='all' || (state.noticeFilter==='unread' && n.count) || (state.noticeFilter==='critical' && n.color==='red'));
+      const today = filtered.filter(x=>x.i<4), earlier=filtered.filter(x=>x.i>=4);
+      return `<section class="screen" aria-label="Notifications"><header class="page-bar notifications-bar"><button class="icon-btn" type="button" data-action="back" aria-label="Back">${svg('back')}</button><div class="notification-search"><input id="notice-search" type="search" placeholder="Search Notifications" aria-label="Search Notifications" value="${state.query}" autocomplete="off"/>${buttonIcon('search','Search','noop')}${buttonIcon('filter','Filter','filter')}${buttonIcon('settings','Settings','settings')}</div></header><div class="notice-list" id="notice-list">${today.length?'<div class="notice-date">Today</div>':''}${today.map(({n,i})=>noticeRow(n,i)).join('')}${earlier.length?'<div class="notice-date">Earlier</div>':''}${earlier.map(({n,i})=>noticeRow(n,i)).join('')}${filtered.length?'':'<div class="empty-state">No notifications match this filter.</div>'}</div></section>`;
+    }
+    function noticeRow(n,index) {
+      const image = ['notice-fill-critical','notice-fill-warning','notice-sos','notice-safe','notice-water-critical','notice-water-safe','notice-light'][index] || 'notice-light';
+      return '<article class="notice-row" data-notice="'+index+'" data-search="'+(n.title+' '+n.where).toLowerCase()+'"><span class="notice-icon '+n.color+'"><img src="assets/reference/'+image+'.png" alt=""></span><div class="notice-copy"><span class="notice-title">'+n.title+'</span><span class="notice-device">'+n.where+'</span></div><span class="notice-time">'+(n.count?'<i class="unread">'+n.count+'</i>':'')+'<span>'+n.time+'</span></span></article>';
+    }    function profileView() {
+      return `<section class="screen profile-view" aria-label="Profile"><h1 class="profile-heading">Profile</h1><div class="profile-hero">${avatar()}<span class="profile-name">${state.profileName}</span><span class="profile-email">${state.profileEmail}</span></div><div class="profile-menu"><button class="menu-row" type="button" data-action="edit-profile">${svg('user','line-icon')}<span class="menu-label">My Profile</span>${svg('chevron','menu-chevron')}</button><button class="menu-row" type="button" data-action="project">${svg('org','line-icon')}<span class="menu-label">Project - ${state.activeProjectName||'Demo'}</span>${svg('chevron','menu-chevron')}</button><button class="menu-row" type="button" data-action="organizations">${svg('globe','line-icon')}<span class="menu-label">Organizations - ${state.activeOrgName||'SenRa IoT'}</span>${svg('chevron','menu-chevron')}</button></div><button class="logout-row" type="button" data-action="logout">${svg('logout')}<span>Logout</span></button></section>`;
+    }
+    function pageBar(title, right='') {
+      return `<header class="page-bar"><button class="icon-btn" type="button" data-action="back" aria-label="Back">${svg('back')}</button><h1>${title}</h1><span class="page-actions">${right}</span></header>`;
+    }
+    function miniMap() { return '<div class="mini-map" id="device-map" role="region" aria-label="Interactive device location map"></div>'; }
+    function detailView() {
+      const d = state.device || devices[1];
+      const outputKinds = ['water','battery','water','occupancy'];
+      const outputColors = ['#ee6c60','#84b934','#f1bd42','#84b934'];
+      const outputs = outputKinds.map((kind,i) => '<article class="output-card"><span class="output-name">Output Name</span><span class="output-icon" style="color:'+outputColors[i]+';background:'+outputColors[i]+'22">'+svg(kind)+'</span><span class="output-kind">Battery</span><strong>3.70</strong></article>').join('');
+      return '<section class="screen" aria-label="Device details">'+pageBar('Device Details',buttonIcon('more','More options','detail-options'))+
+        '<div class="detail-body"><div class="detail-summary">'+thumb('busylight','#e45c55')+'<div><span class="device-title">Busylight</span><span class="detail-id">DevEUI : 23456789021234</span><span class="detail-last">Last Heard : Fri, 23 Aug 2024, 20:24</span></div></div>'+
+        '<div class="detail-fields"><div class="detail-field"><label>Location</label><strong>Demo</strong></div><div class="detail-field"><label>Main Output</label><strong>Colour</strong></div></div>'+
+        '<div class="output-grid">'+outputs+'</div><h2 class="detail-section-title">Location</h2>'+miniMap()+'<button class="mini-map-button" type="button" data-action="expand-map">'+svg('map')+'View map</button>'+
+        '<div class="detail-actions"><button class="action-secondary" type="button" data-action="refresh">Refresh data</button><button class="action-primary" type="button" data-action="downlink">Send Downlink</button></div></div></section>';
+    }    function editView() {
+      return `<section class="screen" aria-label="Edit Profile">${pageBar('Edit Profile',buttonIcon('check','Save profile','save-profile'))}<div class="detail-body"><div class="edit-avatar-row"><div class="edit-avatar">${avatar()}<button class="avatar-edit" aria-label="Change profile photo" data-action="avatar">${svg('edit')}</button></div></div><div class="form-list"><label class="form-field" data-label="Full name">${svg('user')}<input aria-label="Full name" value="${state.profileName}" /></label><label class="form-field" data-label="Email">${svg('mail')}<input aria-label="Email" value="${state.profileEmail}" type="email" /></label><label class="form-field" data-label="Primary Phone Number">${svg('phone')}<input aria-label="Primary phone" value="9867564857" type="tel" /></label><label class="form-field" data-label="Secondary phone Number">${svg('phone')}<input aria-label="Secondary phone" value="9675846534" type="tel" /></label><label class="form-field" data-label="Organization">${svg('org')}<input aria-label="Organization" value="SenRa" /></label></div><button class="action-primary" style="width:100%;margin-top:15px" type="button" data-action="save-profile">Save changes</button></div></section>`;
+    }
+    function render() {
+      overlayRoot.innerHTML = '';
+      const route = state.route;
+      const tabs = ['devices','locations','analytics','profile'].includes(route);
+      app.className = `app ${tabs?'':'no-tabs'}`;
+      app.innerHTML = (route==='login'?loginView():route==='devices'?devicesView():route==='locations'?locationsView():route==='analytics'?analyticsView():route==='profile'?profileView():route==='notifications'?notificationsView():route==='detail'?detailView():route==='edit'?editView():route==='map'?locationsView(true):devicesView()) + (tabs?nav():'');
+      bind();
+      announceRoute();
+    }
+    function go(route) {
+      if (route==='notifications') state.previous=state.route;
+      if (route==='locations'||route==='analytics'||route==='devices'||route==='profile') state.tab=route;
+      state.route=route; state.query=''; state.expanded=false; render();
+      const sc=app.querySelector('.screen'); if(sc) sc.scrollTop=0;
+    }
+    function back() {
+      if(state.route==='notifications') go(state.previous==='notifications'?'devices':state.previous);
+      else if(state.route==='detail') go(state.previous==='map'?'map':state.previous==='notifications'?'notifications':state.tab);
+      else if(state.route==='edit') go('profile');
+      else if(state.route==='map') go(state.previous==='detail'?'detail':'locations');
+      else go(state.tab);
+    }
+    window.addEventListener('alumhacks-back',()=>{
+      if (overlayRoot.innerHTML) { overlayRoot.innerHTML=''; return; }
+      if (!nativeBackRoutes.has(state.route)) back();
+    });
+    function showToast(message) {
+      toastRoot.innerHTML=`<div class="toast" role="status">${message}</div>`;
+      clearTimeout(state.toastTimer); state.toastTimer=setTimeout(()=>toastRoot.innerHTML='',2300);
+    }
+    function openFilter() {
+      const isNotifications=state.route==='notifications';
+      const activeFilter=isNotifications?state.noticeFilter:state.deviceFilter;
+      overlayRoot.innerHTML=`<div class="scrim" data-action="close-sheet"><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title"><div class="sheet-grabber"></div><h2 id="sheet-title">${isNotifications?'Notification settings':'Filter devices'}</h2><p class="sheet-subtitle">${isNotifications?'Choose which alerts appear in your feed.':'Narrow the device list by current status.'}</p><div class="filter-options">${(isNotifications?['All notifications','Unread only','Critical alerts']:['All devices','Needs attention','Online']).map((item,i)=>`<label class="filter-option"><span>${item}</span><input type="radio" name="filter" value="${isNotifications?['all','unread','critical'][i]:['all','attention','online'][i]}" ${activeFilter===(isNotifications?['all','unread','critical'][i]:['all','attention','online'][i])?'checked':''}/></label>`).join('')}</div><div class="sheet-actions"><button class="action-secondary" type="button" data-action="close">Cancel</button><button class="action-primary" type="button" data-action="apply-filter">Apply</button></div></section></div>`;
+      overlayRoot.querySelector('.scrim').addEventListener('click',e=>{if(e.target===e.currentTarget)overlayRoot.innerHTML='';});
+      overlayRoot.querySelector('[data-action="close"]').addEventListener('click',()=>overlayRoot.innerHTML='');
+      overlayRoot.querySelector('[data-action="apply-filter"]').addEventListener('click',()=>{
+        const checked=overlayRoot.querySelector('input[name="filter"]:checked'); if(checked) { if(isNotifications) state.noticeFilter=checked.value; else state.deviceFilter=checked.value; }
+        overlayRoot.innerHTML=''; render();
+      });
+    }
+    function openDownlink() {
+      overlayRoot.innerHTML=`<div class="scrim" data-action="close-sheet"><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title"><div class="sheet-grabber"></div><div class="downlink-illustration"><svg viewBox="0 0 64 64"><path d="M14 40h36M19 40V24h26v16M24 24v-8h16v8M26 48h12M32 40v8"/><circle cx="32" cy="32" r="5"/><path d="m10 16 6 6m38-6-6 6M8 10l6 3m42-3-6 3"/></svg></div><h2 id="sheet-title">Send Downlink</h2><p class="sheet-subtitle">Send a command to this device. The device must be online to receive it.</p><label class="sheet-field"><span class="field-label">Port</span><select aria-label="Select port"><option>Select</option><option>1 · Status</option><option>2 · Control</option></select>${svg('down')}</label><label class="sheet-field"><span class="field-label">Command</span><select aria-label="Select command"><option>Valve</option><option>Open</option><option>Close</option><option>Reset</option></select>${svg('down')}</label><div class="sheet-actions"><button class="action-secondary" type="button" data-action="close">Cancel</button><button class="action-primary" type="button" data-action="save-downlink">Save</button></div></section></div>`;
+      overlayRoot.querySelector('.scrim').addEventListener('click',e=>{if(e.target===e.currentTarget)overlayRoot.innerHTML='';});
+      overlayRoot.querySelector('[data-action="close"]').addEventListener('click',()=>overlayRoot.innerHTML='');
+      overlayRoot.querySelector('[data-action="save-downlink"]').addEventListener('click',()=>{overlayRoot.innerHTML='';showToast('Downlink queued for delivery');});
+    }
+    function applySearch(value) {
+      state.query=value;
+      if(state.route==='devices') {
+        const q=value.toLowerCase();
+        const cards=[...app.querySelectorAll('.device-card')];
+        cards.forEach(el=>el.hidden=!el.innerText.toLowerCase().includes(q));
+        const list=app.querySelector('#device-list');
+        if(list){let empty=list.querySelector('.empty-state');if(!cards.some(el=>!el.hidden)){if(!empty)list.insertAdjacentHTML('beforeend','<div class="empty-state">No devices match your search.</div>');}else if(empty)empty.remove();}
+      } else if(state.route==='notifications') {
+        const q=value.toLowerCase();
+        app.querySelectorAll('.notice-row').forEach(el=>el.hidden=!el.dataset.search.includes(q));
+      } else if(state.route==='locations' || state.route==='map') {
+        window.filterAlumhacksMapDevices?.(value);
+      }
+    }
+    function bind() {
+      app.querySelectorAll('[data-tab]').forEach(el=>el.addEventListener('click',()=>go(el.dataset.tab)));
+      const search=app.querySelector('#main-search'); if(search) search.addEventListener('input',e=>applySearch(e.target.value));
+      const nsearch=app.querySelector('#notice-search'); if(nsearch) nsearch.addEventListener('input',e=>applySearch(e.target.value));
+      app.querySelectorAll('[data-device]').forEach(el=>{
+        const open=()=>{state.device=devices.find(d=>d.id===el.dataset.device)||devices[1];state.previous=state.route;go('detail');};
+        el.addEventListener('click',open); el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open();}});
+      });
+      app.querySelectorAll('[data-action]').forEach(el=>el.addEventListener('click',e=>{
+        e.stopPropagation(); const action=el.dataset.action;
+        if(action==='notifications') go('notifications');
+        else if(action==='filter'||action==='settings') openFilter();
+        else if(action==='back') back();
+        else if(action==='expand-map'){state.previous=state.route;go('map');}
+        else if(action==='see-more'){state.expanded=!state.expanded;render();}
+        else if(action==='downlink') openDownlink();
+        else if(action==='save-downlink'){overlayRoot.innerHTML='';showToast('Downlink queued for delivery');}
+        else if(action==='edit-profile') go('edit');
+        else if(action==='save-profile'){state.profileName=app.querySelector('[aria-label="Full name"]')?.value||state.profileName;state.profileEmail=app.querySelector('[aria-label="Email"]')?.value||state.profileEmail;showToast('Profile changes saved');state.tab='profile';setTimeout(()=>go('profile'),350);}
+        else if(action==='avatar') showToast('Profile photo can be updated from your device');
+        else if(action==='project') showToast('Demo project selected');
+        else if(action==='organizations') openOrganizations();
+        else if(action==='logout') go('login');
+        else if(action==='dashboard') openDashboard();
+        else if(action==='metric-menu') showToast('Metric options');
+        else if(action==='detail-options') showToast('More device options');
+        else if(action==='refresh') showToast('Device data refreshed');
+      }));
+    }
+    function openOrganizations() {
+      overlayRoot.innerHTML=`<div class="scrim"><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title"><div class="sheet-grabber"></div><h2 id="sheet-title">Organizations</h2><p class="sheet-subtitle">Choose an organization</p><div class="filter-options"><button class="filter-option" data-action="choose-org" type="button"><span>SenRa IoT</span>${svg('check')}</button><button class="filter-option" data-action="choose-org" type="button"><span>Demo organization</span>${svg('chevron')}</button></div><div class="sheet-actions"><button class="action-secondary" data-action="close" type="button">Close</button></div></section></div>`;
+      overlayRoot.querySelector('[data-action="close"]').addEventListener('click',()=>overlayRoot.innerHTML='');
+      overlayRoot.querySelectorAll('[data-action="choose-org"]').forEach(b=>b.addEventListener('click',()=>{overlayRoot.innerHTML='';showToast(`${b.querySelector('span').textContent} selected`);}));
+    }
+    function openDashboard() {
+      overlayRoot.innerHTML=`<div class="scrim"><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title"><div class="sheet-grabber"></div><h2 id="sheet-title">Select dashboard</h2><div class="filter-options"><button class="filter-option" data-action="select-dashboard" type="button"><span>Public Dashboard</span>${svg('check')}</button><button class="filter-option" data-action="select-dashboard" type="button"><span>Device health</span>${svg('chevron')}</button></div><div class="sheet-actions"><button class="action-secondary" data-action="close" type="button">Close</button></div></section></div>`;
+      overlayRoot.querySelector('[data-action="close"]').addEventListener('click',()=>overlayRoot.innerHTML='');
+      overlayRoot.querySelectorAll('[data-action="select-dashboard"]').forEach(b=>b.addEventListener('click',()=>{overlayRoot.innerHTML='';showToast(`${b.querySelector('span').textContent} selected`);}));
+    }
+    render();
+  </script>
+  <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="ginjer-api.js"></script>
+</body>
+</html>

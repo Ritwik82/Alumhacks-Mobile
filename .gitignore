@@ -1,0 +1,13 @@
+node_modules/
+.expo/
+work/
+*.log
+.env
+.env.*
+*.fig
+*.pdf
+*postman_collection*.json
+AGENTS.md
+Start Alumhacks.bat
+assets/reference/device-detail-map.png
+assets/reference/locations-map.png
