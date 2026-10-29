@@ -10,11 +10,12 @@
     "backend": "node server.js"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
     "expo": "~58.0.21",
-    "expo-status-bar": "~58.0.4",
-    "leaflet": "^1.9.4",
+    "expo-build-properties": "~58.0.11",
+    "expo-font": "~58.0.11",
     "react": "19.3.0",
     "react-native": "0.88.1",
-    "react-native-webview": "13.16.0"
+    "react-native-maps": "1.29.11"
   }
 }

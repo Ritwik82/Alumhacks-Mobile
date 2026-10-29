@@ -1,39 +1,11 @@
 'use strict';
 
 const http = require('node:http');
-const fs = require('node:fs');
 const os = require('node:os');
-const path = require('node:path');
 
-const ROOT = __dirname;
 const PORT = Number(process.env.ALUMHACKS_PORT || 8787);
 const GINJER_URL = 'https://prodapi.ginjer.io/graphql';
 const TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
-const STATIC_FILES = new Map([
-  ['/', ['index.html', 'text/html; charset=utf-8']],
-  ['/index.html', ['index.html', 'text/html; charset=utf-8']],
-  ['/assets/reference/device-cold-chain.png', [path.join('assets', 'reference', 'device-cold-chain.png'), 'image/png']],
-  ['/assets/reference/device-level-sensor.png', [path.join('assets', 'reference', 'device-level-sensor.png'), 'image/png']],
-  ['/assets/reference/device-controller.png', [path.join('assets', 'reference', 'device-controller.png'), 'image/png']],
-  ['/assets/reference/device-panic-button.png', [path.join('assets', 'reference', 'device-panic-button.png'), 'image/png']],
-  ['/assets/reference/device-air-quality.png', [path.join('assets', 'reference', 'device-air-quality.png'), 'image/png']],
-  ['/assets/reference/device-busylight.png', [path.join('assets', 'reference', 'device-busylight.png'), 'image/png']],
-  ['/assets/reference/profile-photo.png', [path.join('assets', 'reference', 'profile-photo.png'), 'image/png']],
-  ['/assets/reference/ginjer-logo.png', [path.join('assets', 'reference', 'ginjer-logo.png'), 'image/png']],
-  ['/assets/reference/login-illustration.png', [path.join('assets', 'reference', 'login-illustration.png'), 'image/png']],
-  ['/assets/reference/notice-fill-critical.png', [path.join('assets', 'reference', 'notice-fill-critical.png'), 'image/png']],
-  ['/assets/reference/notice-fill-warning.png', [path.join('assets', 'reference', 'notice-fill-warning.png'), 'image/png']],
-  ['/assets/reference/notice-sos.png', [path.join('assets', 'reference', 'notice-sos.png'), 'image/png']],
-  ['/assets/reference/notice-safe.png', [path.join('assets', 'reference', 'notice-safe.png'), 'image/png']],
-  ['/assets/reference/notice-water-critical.png', [path.join('assets', 'reference', 'notice-water-critical.png'), 'image/png']],
-  ['/assets/reference/notice-water-safe.png', [path.join('assets', 'reference', 'notice-water-safe.png'), 'image/png']],
-  ['/assets/reference/downlink-illustration.png', [path.join('assets', 'reference', 'downlink-illustration.png'), 'image/png']],
-  ['/assets/reference/notice-light.png', [path.join('assets', 'reference', 'notice-light.png'), 'image/png']],
-  ['/ginjer-api.js', ['ginjer-api.js', 'text/javascript; charset=utf-8']],
-  ['/vendor/leaflet/leaflet.js', [path.join('node_modules', 'leaflet', 'dist', 'leaflet.js'), 'text/javascript; charset=utf-8']],
-  ['/vendor/leaflet/leaflet.css', [path.join('node_modules', 'leaflet', 'dist', 'leaflet.css'), 'text/css; charset=utf-8']],
-  ['/.od-frames/layout.css', [path.join('.od-frames', 'layout.css'), 'text/css; charset=utf-8']]
-]);
 
 let ginjerToken = '';
 let tokenExpiresAt = 0;
@@ -174,22 +146,6 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && url.pathname === '/api/graphql') return proxyGraphql(req, res);
 
-  if (req.method === 'GET' && STATIC_FILES.has(url.pathname)) {
-    const [relativePath, contentType] = STATIC_FILES.get(url.pathname);
-    const target = path.join(ROOT, relativePath);
-    fs.readFile(target, (err, data) => {
-      if (err) return json(res, 404, { error: 'App file not found.' });
-      res.writeHead(200, {
-        'Content-Type': contentType,
-        'Content-Length': data.length,
-        'Cache-Control': 'no-store',
-        'X-Content-Type-Options': 'nosniff',
-        'Referrer-Policy': 'strict-origin-when-cross-origin'
-      });
-      res.end(data);
-    });
-    return;
-  }
   json(res, 404, { error: 'Not found.' });
 });
 

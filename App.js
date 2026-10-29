@@ -1,158 +1,634 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
+  Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  Pressable,
   SafeAreaView,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
+import MapView, { Marker } from 'react-native-maps';
+import { demoDevices, demoNotices, GinjerClient, hasCoordinates } from './src/api';
 
-const INITIAL_URL = '';
+const C = {
+  green: '#82AE25', greenDark: '#638B1B', greenPale: '#F2F7E9', ink: '#202624', muted: '#858D87',
+  line: '#E8ECE6', canvas: '#F8F9F7', white: '#FFFFFF', red: '#E9685E', redPale: '#FFF0EE',
+  amber: '#E5AE37', amberPale: '#FFF7E5', blue: '#38A1C5', bluePale: '#EAF6FA',
+};
+const DEVICE_IMAGES = {
+  snow: require('./assets/reference/device-cold-chain.png'),
+  water: require('./assets/reference/device-level-sensor.png'),
+  controller: require('./assets/reference/device-controller.png'),
+  alert: require('./assets/reference/device-panic-button.png'),
+  air: require('./assets/reference/device-air-quality.png'),
+  busylight: require('./assets/reference/device-busylight.png'),
+};
+const NOTICE_IMAGES = {
+  'notice-fill-critical': require('./assets/reference/notice-fill-critical.png'),
+  'notice-fill-warning': require('./assets/reference/notice-fill-warning.png'),
+  'notice-sos': require('./assets/reference/notice-sos.png'),
+  'notice-safe': require('./assets/reference/notice-safe.png'),
+  'notice-water-critical': require('./assets/reference/notice-water-critical.png'),
+  'notice-water-safe': require('./assets/reference/notice-water-safe.png'),
+  'notice-light': require('./assets/reference/notice-light.png'),
+};
+const DEMO_PROFILE = { name: 'Shaheen Ansari', email: 'shaheenansari2519cs@gmail.com' };
 
-export default function App() {
-  const [urlText, setUrlText] = useState(INITIAL_URL);
-  const [appUrl, setAppUrl] = useState(INITIAL_URL);
-  const [editing, setEditing] = useState(true);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [pageCanGoBack, setPageCanGoBack] = useState(false);
-  const webViewRef = useRef(null);
-  const allowedOrigin = useMemo(() => {
-    try { return new URL(appUrl).origin; } catch { return ''; }
-  }, [appUrl]);
-
-  useEffect(() => {
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (!editing && pageCanGoBack) {
-        webViewRef.current?.injectJavaScript("window.dispatchEvent(new Event('alumhacks-back')); true;");
-        return true;
-      }
-      return false;
-    });
-    return () => subscription.remove();
-  }, [editing, pageCanGoBack]);
-
-  function handleWebMessage({ nativeEvent }) {
-    try {
-      const message = JSON.parse(nativeEvent.data);
-      if (message.type === 'route') setPageCanGoBack(Boolean(message.canGoBack));
-    } catch { /* Ignore messages that are not route state. */ }
-  }
-
-  function connect() {
-    const candidate = urlText.trim().replace(/\/$/, '');
-    try {
-      const parsed = new URL(candidate);
-      if (parsed.protocol !== 'http:' || !parsed.port || parsed.pathname !== '/') {
-        throw new Error('Use the full local URL printed by the Alumhacks server, including :8787.');
-      }
-      setError('');
-      setLoading(true);
-      setAppUrl(candidate);
-      setEditing(false);
-    } catch (err) {
-      setError(err.message || 'Enter a valid local URL, for example http://192.168.1.20:8787');
-      setEditing(true);
-    }
-  }
-
-  if (editing) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <StatusBar barStyle="dark-content" />
-        <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.panel}>
-            <Text style={styles.kicker}>ALUMHACKS MOBILE</Text>
-            <Text style={styles.title}>Connect to your computer</Text>
-            <Text style={styles.help}>Start Start Alumhacks.bat on your computer. In its server window, find the “Phone on the same Wi-Fi” address and enter it below.</Text>
-            <TextInput
-              value={urlText}
-              onChangeText={setUrlText}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              placeholder="http://192.168.1.20:8787"
-              style={styles.input}
-              accessibilityLabel="Alumhacks computer server URL"
-              onSubmitEditing={connect}
-            />
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            <TouchableOpacity style={styles.button} onPress={connect} accessibilityRole="button">
-              <Text style={styles.buttonText}>Open Alumhacks</Text>
-            </TouchableOpacity>
-            <Text style={styles.footnote}>Your phone and computer must be on the same trusted Wi-Fi network.</Text>
-          </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView style={styles.webContainer}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fafafa" />
-      {loading ? <ActivityIndicator style={styles.spinner} color="#79a91e" size="large" /> : null}
-      <WebView
-        ref={webViewRef}
-        source={{ uri: appUrl }}
-        style={styles.webview}
-        userAgent="AlumHacksMobile/1.0"
-        javaScriptEnabled
-        domStorageEnabled
-        mixedContentMode="never"
-        allowsBackForwardNavigationGestures
-        onMessage={handleWebMessage}
-        onLoadStart={() => { setLoading(true); setError(''); }}
-        onLoadEnd={() => setLoading(false)}
-        onError={({ nativeEvent }) => {
-          setLoading(false);
-          setError(nativeEvent.description || 'Could not reach the Alumhacks server.');
-        }}
-        onHttpError={({ nativeEvent }) => {
-          if (nativeEvent.statusCode >= 400) setError(`Server returned HTTP ${nativeEvent.statusCode}.`);
-        }}
-        onShouldStartLoadWithRequest={request => {
-          try {
-            if (request.url === 'about:blank' || new URL(request.url).origin === allowedOrigin) return true;
-          } catch { /* Reject malformed or non-web navigation. */ }
-          setError('This link is outside the Alumhacks server.');
-          return false;
-        }}
-      />
-      {error ? (
-        <View style={styles.errorBar}>
-          <Text style={styles.errorBarText} numberOfLines={2}>{error}</Text>
-          <TouchableOpacity onPress={() => { setError(''); setEditing(true); }} accessibilityRole="button">
-            <Text style={styles.changeText}>SETUP</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-    </SafeAreaView>
-  );
+function IconButton({ name, onPress, label, style, color = C.muted, size = 21 }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={8} style={[styles.iconButton, style]}><Icon name={name} size={size} color={color} /></Pressable>;
 }
 
+function ScreenHeader({ title, onBack, right }) {
+  return <View style={styles.pageHeader}>
+    <IconButton name="arrow-left" label="Back" onPress={onBack} color={C.ink} />
+    <Text numberOfLines={1} style={styles.pageTitle}>{title}</Text>
+    <View style={styles.pageRight}>{right || null}</View>
+  </View>;
+}
+
+function SearchField({ value, onChangeText, placeholder = 'Search devices', style }) {
+  return <View style={[styles.searchField, style]}>
+    <Icon name="magnify" size={20} color={C.muted} />
+    <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor="#A0A6A1" style={styles.searchInput} returnKeyType="search" accessibilityLabel={placeholder} />
+    {value ? <IconButton name="close-circle" label="Clear search" size={18} onPress={() => onChangeText('')} /> : null}
+  </View>;
+}
+
+function StatusChip({ label, status }) {
+  const colors = status === 'red' ? [C.redPale, C.red] : status === 'amber' ? [C.amberPale, '#A87917'] : status === 'blue' ? [C.bluePale, C.blue] : [C.greenPale, C.greenDark];
+  return <View style={[styles.statusChip, { backgroundColor: colors[0] }]}><Text numberOfLines={1} style={[styles.statusChipText, { color: colors[1] }]}>{label}</Text></View>;
+}
+
+function DeviceThumb({ kind, size = 54 }) {
+  const image = DEVICE_IMAGES[kind] || DEVICE_IMAGES.controller;
+  return <View style={[styles.deviceThumb, { width: size, height: size }]}><Image source={image} resizeMode="contain" style={{ width: size - 7, height: size - 7 }} /></View>;
+}
+
+function DeviceCard({ device, onPress }) {
+  const statusColor = device.chips?.[0]?.status === 'red' ? C.red : device.chips?.[0]?.status === 'amber' ? C.amber : C.green;
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${device.name}, ${device.loc}. Open details`} onPress={onPress} style={({ pressed }) => [styles.deviceCard, pressed && styles.pressed]}>
+    <DeviceThumb kind={device.kind} />
+    <View style={styles.deviceCardBody}>
+      <Text numberOfLines={1} style={styles.deviceName}>{device.name}</Text>
+      <Text numberOfLines={1} style={styles.deviceId}>{device.id || device.devEui || 'ID unavailable'}</Text>
+      <Text numberOfLines={1} style={styles.deviceLocation}><Icon name="map-marker-outline" size={12} color={C.muted} /> {device.loc}</Text>
+      <View style={styles.chipRow}>{device.chips?.slice(0, 2).map((chip, index) => <StatusChip key={`${chip.label}-${index}`} {...chip} />)}</View>
+    </View>
+    <View style={styles.deviceCardMeta}>
+      <View style={[styles.onlineDot, { backgroundColor: statusColor }]} />
+      <Text style={styles.lastLabel}>Last heard</Text>
+      <Text numberOfLines={2} style={styles.lastTime}>{device.heard || 'Unknown'}</Text>
+      <Icon name="chevron-right" color={C.green} size={21} style={{ marginTop: 5 }} />
+    </View>
+  </Pressable>;
+}
+
+function BottomTabs({ current, onChange }) {
+  const items = [
+    ['devices', 'Devices', 'view-dashboard-outline'], ['locations', 'Locations', 'map-marker-radius-outline'],
+    ['analytics', 'Analytics', 'chart-box-outline'], ['profile', 'Profile', 'account-outline'],
+  ];
+  return <View style={styles.bottomTabs}>
+    {items.map(([id, label, icon]) => <Pressable key={id} accessibilityRole="tab" accessibilityState={{ selected: current === id }} onPress={() => onChange(id)} style={styles.tabButton}>
+      <Icon name={icon} size={22} color={current === id ? C.greenDark : '#9BA19D'} />
+      <Text style={[styles.tabLabel, current === id && styles.tabLabelActive]}>{label}</Text>
+    </Pressable>)}
+  </View>;
+}
+
+function ActionButton({ title, onPress, secondary = false, disabled = false, style }) {
+  return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={({ pressed }) => [secondary ? styles.secondaryButton : styles.primaryButton, disabled && styles.disabledButton, pressed && !disabled && styles.pressed, style]}>
+    <Text style={[secondary ? styles.secondaryButtonText : styles.primaryButtonText, disabled && { color: '#A3AAA3' }]}>{title}</Text>
+  </Pressable>;
+}
+
+function StatCard({ label, value, icon, tint = C.green }) {
+  return <View style={styles.statCard}><View style={[styles.statIcon, { backgroundColor: `${tint}18` }]}><Icon name={icon} size={19} color={tint} /></View><Text style={styles.statValue}>{value}</Text><Text style={styles.statLabel}>{label}</Text></View>;
+}
+
+function Sheet({ visible, title, subtitle, onClose, children, actions }) {
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+    <Pressable style={styles.modalScrim} onPress={onClose}>
+      <Pressable style={styles.sheet} onPress={event => event.stopPropagation()}>
+        <View style={styles.sheetGrabber} />
+        <Text style={styles.sheetTitle}>{title}</Text>
+        {subtitle ? <Text style={styles.sheetSubtitle}>{subtitle}</Text> : null}
+        <ScrollView keyboardShouldPersistTaps="handled" style={styles.sheetContent}>{children}</ScrollView>
+        {actions ? <View style={styles.sheetActions}>{actions}</View> : null}
+      </Pressable>
+    </Pressable>
+  </Modal>;
+}
+
+export default function App() {
+  const [serverInput, setServerInput] = useState('');
+  const [serverUrl, setServerUrl] = useState('');
+  const [connectedToBackend, setConnectedToBackend] = useState(false);
+  const [setupError, setSetupError] = useState('');
+  const [route, setRoute] = useState('setup');
+  const [tab, setTab] = useState('devices');
+  const [previousRoute, setPreviousRoute] = useState('devices');
+  const [modal, setModal] = useState(null);
+  const [loginMode, setLoginMode] = useState('password');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [token, setToken] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [demoMode, setDemoMode] = useState(true);
+  const [devices, setDevices] = useState(demoDevices);
+  const [organisations, setOrganisations] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [modules, setModules] = useState([]);
+  const [activeOrganisation, setActiveOrganisation] = useState(null);
+  const [activeProject, setActiveProject] = useState(null);
+  const [profile, setProfile] = useState(DEMO_PROFILE);
+  const [selectedDevice, setSelectedDevice] = useState(demoDevices[1]);
+  const [selectedMapDevice, setSelectedMapDevice] = useState(null);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [noticeFilter, setNoticeFilter] = useState('all');
+  const [expanded, setExpanded] = useState(false);
+  const [toast, setToast] = useState('');
+  const [downlinkValue, setDownlinkValue] = useState('{}');
+  const [downlinkModule, setDownlinkModule] = useState('');
+  const mapRef = useRef(null);
+  const client = useMemo(() => serverUrl ? new GinjerClient(serverUrl) : null, [serverUrl]);
+  const isConnected = connectedToBackend && !demoMode;
+  const hasTabs = ['devices', 'locations', 'analytics', 'profile'].includes(route);
+  const positionableDevices = useMemo(() => devices.filter(hasCoordinates), [devices]);
+
+  const showToast = useCallback(message => {
+    setToast(message);
+    setTimeout(() => setToast(''), 2500);
+  }, []);
+
+  const changeTab = useCallback(nextTab => {
+    setTab(nextTab); setRoute(nextTab); setQuery(''); setSelectedMapDevice(null); setExpanded(false);
+  }, []);
+
+  const goToDevice = useCallback((device, from = route) => {
+    setPreviousRoute(from); setSelectedDevice(device); setExpanded(false); setRoute('detail');
+  }, [route]);
+
+  const back = useCallback(() => {
+    if (modal) { setModal(null); return true; }
+    if (route === 'detail' || route === 'notifications' || route === 'map') {
+      setRoute(route === 'detail' ? previousRoute : route === 'map' ? previousRoute : previousRoute);
+      return true;
+    }
+    if (route === 'edit') { setRoute('profile'); return true; }
+    if (route === 'setup') return false;
+    setRoute(tab);
+    return true;
+  }, [modal, route, previousRoute, tab]);
+
+  useEffect(() => {
+    const listener = BackHandler.addEventListener('hardwareBackPress', back);
+    return () => listener.remove();
+  }, [back]);
+
+  useEffect(() => {
+    if (route !== 'map' || positionableDevices.length === 0) return;
+    const timer = setTimeout(() => {
+      const coords = selectedMapDevice && hasCoordinates(selectedMapDevice)
+        ? [{ latitude: Number(selectedMapDevice.position.lat), longitude: Number(selectedMapDevice.position.lng) }]
+        : positionableDevices.map(device => ({ latitude: Number(device.position.lat), longitude: Number(device.position.lng) }));
+      if (coords.length === 1) mapRef.current?.animateToRegion({ ...coords[0], latitudeDelta: 0.08, longitudeDelta: 0.08 }, 350);
+      else mapRef.current?.fitToCoordinates(coords, { edgePadding: { top: 120, right: 55, bottom: 160, left: 55 }, animated: true });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [route, positionableDevices, selectedMapDevice]);
+
+  const checkServer = async () => {
+    const candidate = serverInput.trim().replace(/\/$/, '');
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol !== 'http:' || !parsed.port || parsed.pathname !== '/') throw new Error('Enter the full local URL, including :8787.');
+      setLoading(true); setSetupError('');
+      const response = await fetch(`${candidate}/api/status`);
+      if (!response.ok) throw new Error(`Backend returned HTTP ${response.status}.`);
+      setServerUrl(candidate); setConnectedToBackend(true); setRoute('login');
+    } catch (error) {
+      setSetupError(error.message === 'Failed to fetch' ? 'Could not reach the backend. Check the URL, Wi-Fi, and firewall.' : (error.message || 'Could not reach the backend.'));
+    } finally { setLoading(false); }
+  };
+
+  const loadProject = async (organisation, project, clientOverride = client) => {
+    const result = await clientOverride.getProjectData(organisation, project);
+    setActiveOrganisation(organisation); setActiveProject(project); setOrganisations(current => current.length ? current : [organisation]);
+    setDevices(result.devices); setModules(result.modules); setSelectedDevice(result.devices[0] || null);
+    setDemoMode(false); setTab('devices'); setRoute('devices'); setQuery(''); setLoginError(''); setModal(null);
+    setProfile(current => ({ ...current, email: current.email || 'Connected with API token' }));
+    if (result.errors.length) showToast(result.errors.join(' '));
+    if (!result.devices.length) showToast('No devices were returned for this project.');
+    else showToast('Project data loaded from Ginjer.');
+  };
+
+  const loadOrganisation = async (organisation, clientOverride = client) => {
+    setLoading(true);
+    try {
+      const orgProjects = await clientOverride.getProjects(organisation);
+      if (!orgProjects.length) throw new Error(`No projects were returned for ${organisation.name || 'this organization'}.`);
+      setOrganisations(current => current.length ? current : [organisation]);
+      setProjects(orgProjects); setActiveOrganisation(organisation);
+      const first = orgProjects.find(project => project.active !== false) || orgProjects[0];
+      await loadProject(organisation, first, clientOverride);
+    } finally { setLoading(false); }
+  };
+
+  const loadAccountData = async (clientOverride, defaultId = '') => {
+    const orgs = await clientOverride.getOrganisations(defaultId);
+    if (!orgs.length) throw new Error('No accepted organizations were returned for this account.');
+    setOrganisations(orgs);
+    const failures = [];
+    for (const organisation of orgs) {
+      try {
+        const orgProjects = await clientOverride.getProjects(organisation);
+        if (!orgProjects.length) { failures.push(`No projects were returned for ${organisation.name || 'this organization'}.`); continue; }
+        setProjects(orgProjects); setActiveOrganisation(organisation);
+        const project = orgProjects.find(item => item.active !== false) || orgProjects[0];
+        await loadProject(organisation, project, clientOverride);
+        return;
+      } catch (error) { failures.push(error.message); }
+    }
+    throw new Error(failures.join(' '));
+  };
+
+  const submitLogin = async () => {
+    if (!client) { setLoginError('Connect to the computer backend first.'); return; }
+    setLoading(true); setLoginError('');
+    try {
+      let authToken = token.trim().replace(/^Bearer\s+/i, '');
+      if (loginMode === 'password') {
+        const data = await client.signIn(email.trim(), password);
+        const user = data.signIn;
+        if (!user?.token) throw new Error('Sign-in returned no token. Check your Ginjer credentials.');
+        authToken = user.token;
+        setProfile({ name: [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Ginjer User', email: user.emailId || email });
+        const defaultId = (typeof user.defaultAccount === 'string' ? user.defaultAccount : user.defaultAccount?.organisationId) || user.organisationId;
+        await client.saveToken(authToken);
+        await loadAccountData(client, defaultId);
+      } else {
+        if (!authToken) throw new Error('Paste the token value from your Postman environment.');
+        await client.saveToken(authToken);
+        setProfile({ name: 'Ginjer user', email: 'Connected with API token' });
+        await loadAccountData(client);
+      }
+    } catch (error) {
+      await client.clearToken();
+      setLoginError(error.message || 'Could not connect to Ginjer.');
+    } finally { setLoading(false); }
+  };
+
+  const disconnect = async () => {
+    await client?.clearToken();
+    setDemoMode(true); setDevices(demoDevices); setSelectedDevice(demoDevices[1]);
+    setOrganisations([]); setProjects([]); setModules([]); setActiveOrganisation(null); setActiveProject(null);
+    setProfile(DEMO_PROFILE); setRoute('login'); setTab('devices'); setModal(null); showToast('Signed out.');
+  };
+
+  const refresh = async () => {
+    if (!client || !activeOrganisation || !activeProject) return;
+    setLoading(true);
+    try {
+      const result = await client.getProjectData(activeOrganisation, activeProject);
+      setDevices(result.devices); setModules(result.modules);
+      showToast('Device data refreshed from Ginjer.');
+    } catch (error) { showToast(`Refresh failed: ${error.message}`); }
+    finally { setLoading(false); }
+  };
+
+  const chooseOrganisation = async organisation => {
+    try { await loadOrganisation(organisation); }
+    catch (error) { showToast(error.message); setModal('organisations'); }
+  };
+
+  const chooseProject = async project => {
+    setLoading(true);
+    try { await loadProject(activeOrganisation, project); }
+    catch (error) { showToast(error.message); }
+    finally { setLoading(false); }
+  };
+
+  const openFullMap = (from = route, device = null) => {
+    setPreviousRoute(from); setSelectedMapDevice(device); setRoute('map');
+  };
+
+  const filteredDevices = useMemo(() => devices.filter(device => {
+    const matchesQuery = !query || `${device.name} ${device.id} ${device.loc} ${device.chips?.map(chip => chip.label).join(' ')}`.toLowerCase().includes(query.toLowerCase());
+    const needsAttention = device.chips?.some(chip => ['red', 'amber'].includes(chip.status));
+    return matchesQuery && (filter !== 'attention' || needsAttention) && (filter !== 'online' || device.chips?.some(chip => /online|on\b/i.test(chip.label)));
+  }), [devices, query, filter]);
+
+  const visibleMarkers = useMemo(() => positionableDevices.filter(device => !query || `${device.name} ${device.id} ${device.loc}`.toLowerCase().includes(query.toLowerCase())), [positionableDevices, query]);
+
+  const showDemo = () => {
+    setDemoMode(true); setDevices(demoDevices); setSelectedDevice(demoDevices[1]); setRoute('devices'); setTab('devices'); setLoginError('');
+  };
+
+  const onDetailBack = () => {
+    if (route === 'detail' && previousRoute === 'map') { setRoute('map'); return; }
+    if (route === 'detail' && previousRoute === 'notifications') { setRoute('notifications'); return; }
+    if (route === 'notifications') { setRoute(previousRoute || 'devices'); return; }
+    if (route === 'map') { setRoute(previousRoute || 'locations'); return; }
+    back();
+  };
+
+  const renderSetup = () => <SafeAreaView style={styles.safeArea}>
+    <StatusBar barStyle="dark-content" backgroundColor={C.canvas} />
+    <KeyboardAvoidingView style={styles.centerPage} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.setupPanel}>
+        <Text style={styles.kicker}>ALUMHACKS MOBILE</Text>
+        <Text style={styles.screenHeading}>Connect to your computer</Text>
+        <Text style={styles.bodyCopy}>Start the Alumhacks backend on your computer. Enter its “Phone on the same Wi-Fi” address here.</Text>
+        <TextInput value={serverInput} onChangeText={setServerInput} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="http://192.168.1.20:8787" placeholderTextColor="#A0A6A1" style={styles.textInput} onSubmitEditing={checkServer} accessibilityLabel="Backend server URL" />
+        {setupError ? <Text style={styles.errorText}>{setupError}</Text> : null}
+        <ActionButton title={loading ? 'Connecting…' : 'Open Alumhacks'} disabled={loading} onPress={checkServer} />
+        <Text style={styles.footnote}>Keep your phone and computer on the same trusted Wi-Fi network.</Text>
+      </View>
+    </KeyboardAvoidingView>
+  </SafeAreaView>;
+
+  const renderLogin = () => <SafeAreaView style={styles.safeArea}>
+    <StatusBar barStyle="dark-content" backgroundColor={C.white} />
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={styles.loginScroll} keyboardShouldPersistTaps="handled">
+        <View style={styles.loginBrand}><Image source={require('./assets/reference/ginjer-logo.png')} style={styles.ginjerLogo} resizeMode="contain" /></View>
+        <Text style={styles.loginTagline}>Monitor and manage your connected devices</Text>
+        <Image source={require('./assets/reference/login-illustration.png')} style={styles.loginIllustration} resizeMode="contain" />
+        <View style={styles.authTabs}>
+          <Pressable onPress={() => { setLoginMode('password'); setLoginError(''); }} style={[styles.authTab, loginMode === 'password' && styles.authTabActive]}><Text style={[styles.authTabText, loginMode === 'password' && styles.authTabTextActive]}>Email and password</Text></Pressable>
+          <Pressable onPress={() => { setLoginMode('token'); setLoginError(''); }} style={[styles.authTab, loginMode === 'token' && styles.authTabActive]}><Text style={[styles.authTabText, loginMode === 'token' && styles.authTabTextActive]}>API token</Text></Pressable>
+        </View>
+        {loginMode === 'password' ? <>
+          <Text style={styles.fieldLabel}>Email</Text>
+          <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" placeholder="Email address" placeholderTextColor="#9EA39F" style={styles.textInput} accessibilityLabel="Email" />
+          <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Password</Text>
+          <TextInput value={password} onChangeText={setPassword} secureTextEntry autoComplete="password" placeholder="Password" placeholderTextColor="#9EA39F" style={styles.textInput} accessibilityLabel="Password" />
+        </> : <>
+          <Text style={styles.fieldLabel}>Ginjer API token</Text>
+          <TextInput value={token} onChangeText={setToken} secureTextEntry autoCapitalize="none" autoCorrect={false} placeholder="Paste your Postman token" placeholderTextColor="#9EA39F" style={styles.textInput} accessibilityLabel="Ginjer API token" />
+          <Text style={styles.footnote}>The token is sent to the local backend and held in memory while connected.</Text>
+        </>}
+        {loginError ? <Text accessibilityRole="alert" style={styles.errorText}>{loginError}</Text> : null}
+        <ActionButton title={loading ? 'Connecting…' : 'Connect'} disabled={loading} onPress={submitLogin} style={{ marginTop: 20 }} />
+        <Pressable onPress={showDemo} style={styles.textLink}><Text style={styles.linkText}>Preview demo data</Text></Pressable>
+        <Text style={styles.legalText}>By signing in, you agree to Ginjer's <Text style={styles.linkText}>Terms of Service</Text> and <Text style={styles.linkText}>Privacy Policy</Text>.</Text>
+        <Pressable onPress={() => { setRoute('setup'); setConnectedToBackend(false); }} style={styles.changeServer}><Text style={styles.mutedLink}>Change computer connection</Text></Pressable>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  </SafeAreaView>;
+
+  const renderDevices = () => <View style={styles.screen}>
+    <View style={styles.listTopBar}>
+      <Text style={styles.sectionTitle}>Devices</Text>
+      <View style={styles.topActions}>
+        <IconButton name="bell-outline" label="Notifications" onPress={() => { setPreviousRoute(route); setRoute('notifications'); }} color={C.ink} />
+        <IconButton name="filter-variant" label="Filter devices" onPress={() => setModal('filter')} color={C.ink} />
+      </View>
+    </View>
+    <Pressable style={styles.projectSelector} onPress={() => setModal('projects')} accessibilityRole="button" accessibilityLabel={`Project ${activeProject?.name || 'Demo'}. Choose project`}>
+      <Icon name="view-grid-outline" size={19} color={C.greenDark} />
+      <View style={{ flex: 1, marginLeft: 9 }}><Text style={styles.selectorCaption}>PROJECT</Text><Text numberOfLines={1} style={styles.selectorName}>{activeProject?.name || 'Demo Project'}</Text></View>
+      <Icon name="chevron-down" size={19} color={C.muted} />
+    </Pressable>
+    <SearchField value={query} onChangeText={setQuery} style={{ marginHorizontal: 16, marginTop: 12 }} />
+    <View style={styles.listSummary}><Text style={styles.summaryText}>{filteredDevices.length} devices</Text><Text style={styles.summaryText}>Updated just now</Text></View>
+    <ScrollView contentContainerStyle={styles.deviceList} keyboardShouldPersistTaps="handled">
+      {filteredDevices.length ? filteredDevices.map((device, index) => <DeviceCard key={device.apiId || device.id || index} device={device} onPress={() => goToDevice(device)} />) : <View style={styles.emptyBox}><Icon name="devices" size={28} color="#A4AAA5" /><Text style={styles.emptyText}>No devices match this search.</Text></View>}
+      <Pressable onPress={() => { setPreviousRoute(route); setRoute('notifications'); }} style={styles.notificationsLink}><Icon name="bell-badge-outline" size={17} color={C.greenDark} /><Text style={styles.notificationsLinkText}>View notifications</Text><Icon name="chevron-right" size={18} color={C.muted} /></Pressable>
+    </ScrollView>
+  </View>;
+
+  const mapSearch = <SearchField value={query} onChangeText={setQuery} placeholder="Search devices on map" style={styles.mapSearch} />;
+  const renderMap = full => {
+    const selected = full ? selectedMapDevice : null;
+    const projectPosition = activeProject?.location;
+    const mapDevices = visibleMarkers;
+    const coordinates = selected && hasCoordinates(selected)
+      ? [{ latitude: Number(selected.position.lat), longitude: Number(selected.position.lng) }]
+      : mapDevices
+        .map(device => ({ latitude: Number(device.position.lat), longitude: Number(device.position.lng) }));
+    const initial = coordinates[0]
+      || (hasCoordinates({ position: projectPosition }) ? { latitude: Number(projectPosition.lat), longitude: Number(projectPosition.lng) } : { latitude: 22.9734, longitude: 78.6569 });
+    return <View style={styles.mapScreen}>
+      <MapView ref={mapRef} key={`${full ? 'full' : 'detail'}-${route}`} style={StyleSheet.absoluteFill} initialRegion={{ ...initial, latitudeDelta: coordinates.length ? 2.5 : 24, longitudeDelta: coordinates.length ? 2.5 : 24 }} showsUserLocation={false} showsCompass>
+        {mapDevices.map(device => <Marker key={device.apiId || device.id} coordinate={{ latitude: Number(device.position.lat), longitude: Number(device.position.lng) }} title={device.name} description={`${device.loc} · Last heard ${device.heard}`} onPress={() => { setSelectedMapDevice(device); if (!full) setSelectedDevice(device); }}>
+          <View style={[styles.markerBubble, { backgroundColor: chipColor(device.chips?.[0]?.status) }]}><Icon name={kindIcon(device.kind)} size={17} color={C.white} /></View>
+        </Marker>)}
+      </MapView>
+      {full ? <ScreenHeader title="Device Map" onBack={onDetailBack} /> : <View style={styles.mapHeader}><Text style={styles.sectionTitle}>Locations</Text><IconButton name="crosshairs-gps" label="Center on devices" color={C.greenDark} onPress={() => { if (coordinates.length > 1) mapRef.current?.fitToCoordinates(coordinates, { edgePadding: { top: 105, right: 48, bottom: 145, left: 48 }, animated: true }); else if (coordinates[0]) mapRef.current?.animateToRegion({ ...coordinates[0], latitudeDelta: 0.08, longitudeDelta: 0.08 }, 350); }} /></View>}
+      {full ? <View style={[styles.mapOverlay, { top: 56 }]}>{mapSearch}</View> : <View style={styles.mapOverlay}>{mapSearch}</View>}
+      {visibleMarkers.length === 0 ? <View style={styles.mapNotice}><Icon name="map-marker-off-outline" size={17} color={C.greenDark} /><Text style={styles.mapNoticeText}>{isConnected ? 'Ginjer has not returned coordinates for devices in this project yet.' : 'Demo devices have no verified coordinates. Connect to Ginjer to map live devices.'}</Text></View> : null}
+      <View style={styles.mapCount}><Icon name="map-marker-multiple-outline" color={C.greenDark} size={15} /><Text style={styles.mapCountText}>{visibleMarkers.length} of {devices.length} devices with coordinates</Text></View>
+      {selectedMapDevice ? <View style={styles.mapDeviceCard}>
+        <DeviceThumb kind={selectedMapDevice.kind} size={40} />
+        <View style={{ flex: 1, minWidth: 0 }}><Text numberOfLines={1} style={styles.mapDeviceName}>{selectedMapDevice.name}</Text><Text numberOfLines={1} style={styles.mapDeviceMeta}>{selectedMapDevice.loc} · {selectedMapDevice.heard}</Text></View>
+        <IconButton name="chevron-right" label={`Open ${selectedMapDevice.name}`} color={C.greenDark} onPress={() => goToDevice(selectedMapDevice, route)} />
+      </View> : null}
+    </View>;
+  };
+
+  const renderLocations = () => renderMap(false);
+
+  const renderAnalytics = () => {
+    const liveOutputs = isConnected ? devices.flatMap(device => device.outputs.map((output, index) => ({ device, output, index }))) : [];
+    return <ScrollView style={styles.screen} contentContainerStyle={styles.standardScroll}>
+      <Pressable style={styles.projectSelector} onPress={() => setModal('projects')}><Icon name="chart-box-outline" size={19} color={C.greenDark} /><View style={{ flex: 1, marginLeft: 9 }}><Text style={styles.selectorCaption}>DASHBOARD</Text><Text style={styles.selectorName}>{activeProject?.name || 'Device health'}</Text></View><Icon name="chevron-down" size={19} color={C.muted} /></Pressable>
+      {isConnected ? <View style={styles.infoNote}><Icon name="information-outline" size={16} color={C.greenDark} /><Text style={styles.infoNoteText}>These are current device outputs. Historical analytics are not included in the Ginjer API collection.</Text></View> : <View style={styles.infoNote}><Icon name="flask-outline" size={16} color={C.greenDark} /><Text style={styles.infoNoteText}>Preview metrics are sample data. Connect to Ginjer to see current outputs.</Text></View>}
+      <View style={styles.statsRow}>
+        <StatCard label="Devices" value={devices.length} icon="devices" tint={C.green} />
+        <StatCard label="Needs attention" value={devices.filter(device => device.chips?.some(chip => chip.status === 'red')).length} icon="alert-circle-outline" tint={C.red} />
+      </View>
+      <Text style={styles.sectionTitleSmall}>{isConnected ? 'Current outputs' : 'Overview'}</Text>
+      {isConnected ? liveOutputs.length ? liveOutputs.map(({ device, output, index }) => <View key={`${device.apiId}-${output.outputId || index}`} style={styles.metricCard}>
+        <View style={styles.metricHeader}><View style={{ flex: 1 }}><Text style={styles.metricName}>{output.outputName || output.label || `Output ${index + 1}`}</Text><Text style={styles.metricCaption}>{device.name} · {device.loc}</Text></View><Icon name="dots-horizontal" size={19} color={C.muted} /></View>
+        <Text style={styles.metricValue}>{typeof output.value === 'object' ? JSON.stringify(output.value) : String(output.value ?? output.label ?? '—')}</Text>
+        <View style={styles.metricFooter}><Text style={styles.metricFooterText}>Last heard · {device.heard}</Text><View style={[styles.onlineDot, { backgroundColor: chipColor(device.chips?.[0]?.status) }]} /></View>
+      </View>) : <EmptyState text="No output values were returned for this project." /> : <>
+        <View style={styles.metricCard}><View style={styles.metricHeader}><View><Text style={styles.metricName}>Level Sensor</Text><Text style={styles.metricCaption}>Tank 6 · Water level</Text></View><Icon name="dots-horizontal" size={19} color={C.muted} /></View><View style={styles.gauge}><View style={styles.gaugeArc}><View style={styles.gaugeNeedle} /></View><Text style={styles.gaugeValue}>1.00<Text style={styles.gaugeUnit}> m</Text></Text></View><View style={styles.metricFooter}><Text style={styles.metricFooterText}>0.0 m</Text><Text style={styles.metricFooterText}>Range 0.0–1.3 m</Text></View></View>
+        <View style={styles.metricCard}><View style={styles.metricHeader}><View><Text style={styles.metricName}>IO Controller</Text><Text style={styles.metricCaption}>Lab Room · Output status</Text></View><Icon name="dots-horizontal" size={19} color={C.muted} /></View><Text style={[styles.metricValue, { color: C.greenDark }]}>ON</Text><View style={styles.metricFooter}><Text style={styles.metricFooterText}>Sample value</Text><View style={[styles.onlineDot, { backgroundColor: C.green }]} /></View></View>
+      </>}
+    </ScrollView>;
+  };
+
+  const renderProfile = () => <ScrollView style={styles.screen} contentContainerStyle={styles.profileScroll}>
+    <Text style={styles.profileHeading}>Profile</Text>
+    <View style={styles.profileHero}><View style={styles.avatar}><Image source={require('./assets/reference/profile-photo.png')} resizeMode="cover" style={styles.avatarImage} /></View><Text style={styles.profileName}>{profile.name}</Text><Text style={styles.profileEmail}>{profile.email}</Text></View>
+    <View style={styles.profileMenu}>
+      <Pressable onPress={() => setRoute('edit')} style={styles.menuRow}><Icon name="account-outline" size={20} color={C.greenDark} /><Text style={styles.menuTitle}>My Profile</Text><Icon name="chevron-right" size={18} color="#A8ADA9" /></Pressable>
+      <Pressable onPress={() => setModal('projects')} style={styles.menuRow}><Icon name="view-grid-outline" size={20} color={C.greenDark} /><View style={{ flex: 1 }}><Text style={styles.menuTitle}>Project</Text><Text numberOfLines={1} style={styles.menuValue}>{activeProject?.name || 'Demo Project'}</Text></View><Icon name="chevron-right" size={18} color="#A8ADA9" /></Pressable>
+      <Pressable onPress={() => setModal('organisations')} style={styles.menuRow}><Icon name="domain" size={20} color={C.greenDark} /><View style={{ flex: 1 }}><Text style={styles.menuTitle}>Organization</Text><Text numberOfLines={1} style={styles.menuValue}>{activeOrganisation?.name || 'SenRa IoT'}</Text></View><Icon name="chevron-right" size={18} color="#A8ADA9" /></Pressable>
+      <Pressable onPress={() => { setPreviousRoute(route); setRoute('notifications'); }} style={[styles.menuRow, { borderBottomWidth: 0 }]}><Icon name="bell-outline" size={20} color={C.greenDark} /><Text style={styles.menuTitle}>Notifications</Text><Icon name="chevron-right" size={18} color="#A8ADA9" /></Pressable>
+    </View>
+    {isConnected ? <ActionButton title="Disconnect from Ginjer" secondary onPress={disconnect} style={{ marginTop: 14 }} /> : <ActionButton title="Connect to Ginjer" onPress={() => setRoute('login')} style={{ marginTop: 14 }} />}
+    <Text style={styles.profileFootnote}>Alumhacks Mobile · Expo Go preview</Text>
+  </ScrollView>;
+
+  const renderDetail = () => {
+    const device = selectedDevice;
+    if (!device) return <View style={styles.screen}><ScreenHeader title="Device Details" onBack={onDetailBack} /><EmptyState text="Select a device to see its details." /></View>;
+    const coords = hasCoordinates(device);
+    return <ScrollView style={styles.screen} contentContainerStyle={styles.detailScroll}>
+      <ScreenHeader title="Device Details" onBack={onDetailBack} right={<IconButton name="dots-horizontal" label="Device options" onPress={() => showToast('No additional device options are available.')} />} />
+      <View style={styles.detailSummary}><DeviceThumb kind={device.kind} size={64} /><View style={{ flex: 1 }}><Text style={styles.detailName}>{device.name}</Text><Text style={styles.detailId}>DevEUI · {device.id}</Text><Text style={styles.detailHeard}>Last heard · {device.heard}</Text></View></View>
+      <View style={styles.detailFields}><View style={styles.detailField}><Text style={styles.detailFieldLabel}>Location</Text><Text numberOfLines={2} style={styles.detailFieldValue}>{device.loc}</Text></View><View style={styles.detailField}><Text style={styles.detailFieldLabel}>Main Output</Text><Text numberOfLines={2} style={styles.detailFieldValue}>{device.output}</Text></View></View>
+      <Pressable onPress={() => setExpanded(!expanded)} style={styles.expandButton}><Text style={styles.expandButtonText}>{expanded ? 'See less' : 'See more'}</Text><Icon name={expanded ? 'chevron-up' : 'chevron-down'} size={17} color={C.greenDark} /></Pressable>
+      {expanded ? <View style={styles.expandedDetails}><Text style={styles.expandedLine}><Text style={styles.bold}>Device type</Text> · {device.hardwareType || 'Not reported'}</Text><Text style={styles.expandedLine}><Text style={styles.bold}>Network ID</Text> · {device.networkId || 'Not reported'}</Text>{device.attributes?.length ? device.attributes.map((attribute, index) => <Text key={attribute.attributeId || index} style={styles.expandedLine}><Text style={styles.bold}>{attribute.attributeName || 'Attribute'}</Text> · {formatOutput(attribute.value)}</Text>) : <Text style={styles.expandedLine}><Text style={styles.bold}>Attributes</Text> · None returned</Text>}</View> : null}
+      <Text style={styles.sectionTitleSmall}>Outputs</Text>
+      {device.outputs?.length ? <View style={styles.outputGrid}>{device.outputs.map((output, index) => <View key={output.outputId || index} style={styles.outputCard}><Text numberOfLines={1} style={styles.outputLabel}>{output.outputName || output.label || `Output ${index + 1}`}</Text><Text style={styles.outputValue}>{formatOutput(output.value ?? output.label)}</Text><View style={[styles.outputDot, { backgroundColor: chipColor(device.chips?.[0]?.status) }]} /></View>)}</View> : <View style={styles.emptyInline}><Text style={styles.emptyText}>No output data returned for this device.</Text></View>}
+      <View style={styles.detailSectionHeader}><Text style={styles.sectionTitleSmall}>Location</Text><Pressable onPress={() => openFullMap('detail', device)}><Text style={styles.linkText}>View map</Text></Pressable></View>
+      <View style={styles.miniMap}>
+        <MapView style={StyleSheet.absoluteFill} initialRegion={coords ? { latitude: Number(device.position.lat), longitude: Number(device.position.lng), latitudeDelta: 0.08, longitudeDelta: 0.08 } : { latitude: 22.9734, longitude: 78.6569, latitudeDelta: 24, longitudeDelta: 24 }} scrollEnabled={coords} zoomEnabled={coords}>
+          {coords ? <Marker coordinate={{ latitude: Number(device.position.lat), longitude: Number(device.position.lng) }} title={device.name} description={device.loc} /> : null}
+        </MapView>
+        {!coords ? <View style={styles.miniMapMessage}><Icon name="map-marker-off-outline" size={17} color={C.greenDark} /><Text style={styles.miniMapText}>Coordinates were not returned for this device.</Text></View> : null}
+      </View>
+      <View style={styles.expandedDetails}><Text style={styles.expandedLine}>{device.loc}{coords ? ` · ${device.position.lat}, ${device.position.lng}` : ''}</Text></View>
+      <View style={styles.detailActions}><ActionButton title="Refresh data" secondary onPress={refresh} /><ActionButton title="Send Downlink" onPress={() => { setDownlinkValue('{}'); setDownlinkModule(modules.find(item => item.moduleType === 'DOWNLINK_INTERFACE')?._id || ''); setModal('downlink'); }} /></View>
+    </ScrollView>;
+  };
+
+  const renderNotifications = () => {
+    const notices = demoNotices.filter((notice, index) => noticeFilter === 'all' || (noticeFilter === 'unread' && notice.count) || (noticeFilter === 'critical' && notice.color === 'red'))
+      .filter(notice => !query || `${notice.title} ${notice.where}`.toLowerCase().includes(query.toLowerCase()));
+    return <View style={styles.screen}>
+      <ScreenHeader title="Notifications" onBack={onDetailBack} right={<IconButton name="filter-variant" label="Filter notifications" onPress={() => setModal('notice-filter')} />} />
+      {isConnected ? <View style={[styles.infoNote, { marginHorizontal: 14 }]}><Icon name="information-outline" size={16} color={C.greenDark} /><Text style={styles.infoNoteText}>Sample alerts · Ginjer’s supplied API does not include notifications.</Text></View> : null}
+      <SearchField value={query} onChangeText={setQuery} placeholder="Search notifications" style={{ marginHorizontal: 14, marginTop: 6, marginBottom: 8 }} />
+      <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
+        {notices.map((notice, index) => <View key={`${notice.title}-${index}`}>
+          {(index === 0 || (index === 4 && notices.length > 4)) ? <Text style={styles.noticeDate}>{index === 0 ? 'Today' : 'Earlier'}</Text> : null}
+          <View style={styles.noticeRow}><Image source={NOTICE_IMAGES[notice.icon]} style={styles.noticeImage} resizeMode="cover" /><View style={{ flex: 1 }}><Text style={styles.noticeTitle}>{notice.title}</Text><Text style={styles.noticeLocation}>{notice.where}</Text></View><View style={styles.noticeTime}>{notice.count ? <Text style={styles.unreadCount}>{notice.count}</Text> : null}<Text style={styles.noticeTimeText}>{notice.time}</Text></View></View>
+        </View>)}
+        {!notices.length ? <EmptyState text="No notifications match this filter." /> : null}
+      </ScrollView>
+    </View>;
+  };
+
+  const renderEdit = () => <View style={styles.screen}>
+    <ScreenHeader title="Edit Profile" onBack={() => setRoute('profile')} right={<IconButton name="check" label="Save profile" color={C.greenDark} onPress={() => { setRoute('profile'); showToast('Profile updates are not available in the supplied Ginjer API.'); }} />} />
+    <ScrollView contentContainerStyle={styles.standardScroll}>
+      <View style={[styles.avatar, { alignSelf: 'center', marginBottom: 18 }]}><Image source={require('./assets/reference/profile-photo.png')} style={styles.avatarImage} /></View>
+      <Text style={styles.fieldLabel}>Full name</Text><TextInput value={profile.name} onChangeText={value => setProfile(current => ({ ...current, name: value }))} style={styles.textInput} />
+      <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Email</Text><TextInput value={profile.email} onChangeText={value => setProfile(current => ({ ...current, email: value }))} keyboardType="email-address" autoCapitalize="none" style={styles.textInput} />
+      <ActionButton title="Save changes" onPress={() => { setRoute('profile'); showToast('Profile updates are not available in the supplied Ginjer API.'); }} style={{ marginTop: 18 }} />
+    </ScrollView>
+  </View>;
+
+  const renderBody = () => {
+    if (route === 'devices') return renderDevices();
+    if (route === 'locations') return renderLocations();
+    if (route === 'map') return renderMap(true);
+    if (route === 'analytics') return renderAnalytics();
+    if (route === 'profile') return renderProfile();
+    if (route === 'notifications') return renderNotifications();
+    if (route === 'detail') return renderDetail();
+    if (route === 'edit') return renderEdit();
+    return renderDevices();
+  };
+
+  const renderOptions = () => {
+    if (modal === 'organisations') return <Sheet visible title="Organizations" subtitle="Choose an accepted Ginjer organization." onClose={() => setModal(null)} actions={<ActionButton title="Close" secondary onPress={() => setModal(null)} />}>
+      {organisations.map(organisation => <OptionRow key={organisation.organisationId} title={organisation.name || organisation.organisationId} onPress={() => chooseOrganisation(organisation)} />)}
+    </Sheet>;
+    if (modal === 'projects') return <Sheet visible title="Projects" subtitle="Switch the project shown in the app." onClose={() => setModal(null)} actions={<ActionButton title="Close" secondary onPress={() => setModal(null)} />}>
+      {projects.map(project => <OptionRow key={project._id} title={project.name || project._id} subtitle={`${project.deviceCount?.[0]?.deviceCount ?? '—'} devices`} selected={activeProject?._id === project._id} onPress={() => chooseProject(project)} />)}
+      {!projects.length ? <Text style={styles.sheetEmpty}>Connect to Ginjer to select a project.</Text> : null}
+    </Sheet>;
+    if (modal === 'filter' || modal === 'notice-filter') {
+      const noticeMode = modal === 'notice-filter';
+      const value = noticeMode ? noticeFilter : filter;
+      const options = noticeMode ? [['all', 'All notifications'], ['unread', 'Unread only'], ['critical', 'Critical alerts']] : [['all', 'All devices'], ['attention', 'Needs attention'], ['online', 'Online']];
+      return <Sheet visible title={noticeMode ? 'Notification filter' : 'Filter devices'} subtitle={noticeMode ? 'Choose which alerts appear in your feed.' : 'Narrow the device list by current status.'} onClose={() => setModal(null)} actions={<><ActionButton title="Cancel" secondary onPress={() => setModal(null)} /><ActionButton title="Apply" onPress={() => setModal(null)} /></>}>
+        {options.map(([id, label]) => <OptionRow key={id} title={label} selected={value === id} onPress={() => noticeMode ? setNoticeFilter(id) : setFilter(id)} radio />)}
+      </Sheet>;
+    }
+    if (modal === 'downlink') {
+      const interfaces = modules.filter(module => module.moduleType === 'DOWNLINK_INTERFACE');
+      const send = async () => {
+        if (!isConnected || !client || !selectedDevice?.apiId) { showToast('Connect to Ginjer and select a live device before sending a downlink.'); setModal(null); return; }
+        let value;
+        try { value = JSON.parse(downlinkValue); if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Enter a JSON object.'); }
+        catch (error) { showToast(error.message); return; }
+        setLoading(true);
+        try {
+          const result = await client.sendDownlink(activeOrganisation, selectedDevice, downlinkModule, value);
+          setModal(null); showToast(result.sendDownlink?.message || 'Ginjer accepted the downlink request.');
+        } catch (error) { showToast(error.message); }
+        finally { setLoading(false); }
+      };
+      return <Sheet visible title="Send Downlink" subtitle={`Enter a JSON command for ${selectedDevice?.name || 'this device'}.`} onClose={() => setModal(null)} actions={<><ActionButton title="Cancel" secondary onPress={() => setModal(null)} /><ActionButton title={loading ? 'Sending…' : 'Send'} disabled={loading || !interfaces.length} onPress={send} /></>}>
+        <Text style={styles.fieldLabel}>Downlink interface</Text>
+        {interfaces.length ? interfaces.map(item => <OptionRow key={item._id} title={item.label || item._id} selected={downlinkModule === item._id} onPress={() => setDownlinkModule(item._id)} radio />) : <Text style={styles.sheetEmpty}>No downlink interface is available for this organization.</Text>}
+        <Text style={[styles.fieldLabel, { marginTop: 14 }]}>JSON value</Text>
+        <TextInput value={downlinkValue} onChangeText={setDownlinkValue} multiline autoCapitalize="none" autoCorrect={false} style={[styles.textInput, styles.jsonInput]} accessibilityLabel="JSON downlink value" />
+        {!isConnected ? <Text style={styles.footnote}>Connect to Ginjer to send a real device command.</Text> : null}
+      </Sheet>;
+    }
+    return null;
+  };
+
+  if (route === 'setup') return renderSetup();
+  if (route === 'login') return renderLogin();
+
+  return <SafeAreaView style={styles.safeArea}>
+    <StatusBar barStyle="dark-content" backgroundColor={route === 'locations' || route === 'map' ? '#F8FAF5' : C.canvas} />
+    <View style={styles.appBody}>{renderBody()}</View>
+    {hasTabs ? <BottomTabs current={tab} onChange={changeTab} /> : null}
+    {toast ? <View pointerEvents="none" style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
+    {loading && route !== 'login' ? <View style={styles.loadingOverlay}><ActivityIndicator color={C.green} size="large" /></View> : null}
+    {renderOptions()}
+  </SafeAreaView>;
+}
+
+function OptionRow({ title, subtitle, selected, radio, onPress }) {
+  return <Pressable onPress={onPress} style={styles.optionRow}>
+    <View style={{ flex: 1 }}><Text numberOfLines={1} style={styles.optionTitle}>{title}</Text>{subtitle ? <Text style={styles.optionSubtitle}>{subtitle}</Text> : null}</View>
+    {radio ? <Icon name={selected ? 'radiobox-marked' : 'radiobox-blank'} size={21} color={selected ? C.greenDark : '#A0A6A1'} /> : <Icon name={selected ? 'check-circle' : 'chevron-right'} size={19} color={selected ? C.greenDark : '#A0A6A1'} />}
+  </Pressable>;
+}
+
+function EmptyState({ text }) {
+  return <View style={styles.emptyBox}><Icon name="inbox-outline" size={28} color="#A4AAA5" /><Text style={styles.emptyText}>{text}</Text></View>;
+}
+
+function kindIcon(kind) {
+  return kind === 'snow' ? 'snowflake' : kind === 'water' ? 'water-outline' : kind === 'alert' ? 'alert-outline' : kind === 'air' ? 'weather-windy' : 'tune-variant';
+}
+
+function chipColor(status) { return status === 'red' ? C.red : status === 'amber' ? C.amber : status === 'blue' ? C.blue : C.green; }
+function formatOutput(value) { return typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? '—'); }
+
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#f7f8f5' },
-  container: { flex: 1, justifyContent: 'center', padding: 24 },
-  panel: { width: '100%', maxWidth: 430, alignSelf: 'center', padding: 22, backgroundColor: '#fff', borderRadius: 20, elevation: 3 },
-  kicker: { color: '#79a91e', fontSize: 12, fontWeight: '700', letterSpacing: 1.2, marginBottom: 12 },
-  title: { color: '#262a2c', fontSize: 25, fontWeight: '700', marginBottom: 10 },
-  help: { color: '#68706b', fontSize: 15, lineHeight: 22, marginBottom: 20 },
-  input: { minHeight: 50, borderWidth: 1, borderColor: '#dfe4dc', borderRadius: 10, paddingHorizontal: 13, fontSize: 15, color: '#262a2c' },
-  error: { color: '#c43e35', fontSize: 13, lineHeight: 19, marginTop: 9 },
-  button: { minHeight: 50, justifyContent: 'center', alignItems: 'center', backgroundColor: '#82ae25', borderRadius: 10, marginTop: 15 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  footnote: { color: '#8b9091', fontSize: 12, lineHeight: 17, marginTop: 15 },
-  webContainer: { flex: 1, backgroundColor: '#fafafa' },
-  webview: { flex: 1, backgroundColor: '#fafafa' },
-  spinner: { position: 'absolute', zIndex: 2, alignSelf: 'center', top: '48%' },
-  errorBar: { position: 'absolute', left: 12, right: 12, bottom: 18, padding: 12, borderRadius: 12, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', gap: 10, elevation: 5 },
-  errorBarText: { flex: 1, color: '#bd3b33', fontSize: 12 },
-  changeText: { color: '#638f17', fontSize: 12, fontWeight: '700' },
+  flex: { flex: 1 }, safeArea: { flex: 1, backgroundColor: C.canvas }, appBody: { flex: 1, minHeight: 0 }, screen: { flex: 1, backgroundColor: C.canvas },
+  centerPage: { flex: 1, justifyContent: 'center', padding: 22 }, setupPanel: { width: '100%', maxWidth: 440, alignSelf: 'center', padding: 22, borderRadius: 20, backgroundColor: C.white, elevation: 3, shadowColor: '#15220E', shadowOpacity: 0.08, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
+  kicker: { color: C.green, fontSize: 12, fontWeight: '800', letterSpacing: 1.2, marginBottom: 11 }, screenHeading: { color: C.ink, fontSize: 24, fontWeight: '700', marginBottom: 9 }, bodyCopy: { color: '#6F7771', fontSize: 14, lineHeight: 21, marginBottom: 18 },
+  textInput: { width: '100%', minHeight: 51, paddingHorizontal: 13, paddingVertical: 11, borderWidth: 1.2, borderColor: '#C9CDC9', borderRadius: 11, backgroundColor: C.white, color: C.ink, fontSize: 15 }, errorText: { color: C.red, fontSize: 13, lineHeight: 19, marginTop: 9 },
+  primaryButton: { minHeight: 51, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center', borderRadius: 12, backgroundColor: C.green }, primaryButtonText: { color: C.white, fontSize: 16, fontWeight: '700' }, secondaryButton: { minHeight: 45, paddingHorizontal: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#DEE6D3', borderRadius: 11, backgroundColor: C.white }, secondaryButtonText: { color: C.greenDark, fontSize: 14, fontWeight: '600' }, disabledButton: { backgroundColor: '#E9EEE3', borderColor: '#E9EEE3' }, pressed: { opacity: 0.75, transform: [{ scale: 0.99 }] }, footnote: { color: '#969D97', fontSize: 12, lineHeight: 18, marginTop: 12 },
+  loginScroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 12, paddingBottom: 22, backgroundColor: C.white }, loginBrand: { height: 76, alignItems: 'center', justifyContent: 'center' }, ginjerLogo: { width: 235, height: 68 }, loginTagline: { marginTop: 5, color: '#969D98', fontSize: 16, textAlign: 'center' }, loginIllustration: { width: '100%', height: 190, marginTop: 14, marginBottom: 14 }, authTabs: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 11, backgroundColor: '#F2F4EF', marginBottom: 14 }, authTab: { minHeight: 38, flex: 1, justifyContent: 'center', alignItems: 'center', borderRadius: 8 }, authTabActive: { backgroundColor: C.white, elevation: 1, shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } }, authTabText: { color: C.muted, fontSize: 12, fontWeight: '500' }, authTabTextActive: { color: C.greenDark, fontWeight: '700' }, fieldLabel: { color: C.greenDark, fontSize: 13, fontWeight: '600', marginBottom: 7 }, textLink: { alignSelf: 'center', marginTop: 12, padding: 6 }, linkText: { color: C.greenDark, fontSize: 14, fontWeight: '600' }, legalText: { color: '#969D98', textAlign: 'center', fontSize: 11, lineHeight: 17, marginTop: 16 }, mutedLink: { color: '#929A94', fontSize: 12 }, changeServer: { alignSelf: 'center', marginTop: 7, padding: 5 },
+  listTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 17, paddingTop: 10, paddingBottom: 5 }, sectionTitle: { color: C.ink, fontSize: 19, lineHeight: 26, fontWeight: '700' }, topActions: { flexDirection: 'row', gap: 2 }, iconButton: { minWidth: 38, minHeight: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 10 }, pageHeader: { height: 52, zIndex: 4, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, backgroundColor: '#FFFFFFF2' }, pageTitle: { flex: 1, textAlign: 'center', color: C.ink, fontSize: 16, fontWeight: '700' }, pageRight: { minWidth: 38, alignItems: 'flex-end' },
+  projectSelector: { minHeight: 52, marginHorizontal: 16, marginTop: 7, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: C.line, borderRadius: 12, backgroundColor: C.white, shadowColor: '#293221', shadowOpacity: 0.035, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 1 }, selectorCaption: { color: '#A1A7A2', fontSize: 9, lineHeight: 12, fontWeight: '700', letterSpacing: 0.7 }, selectorName: { color: C.ink, fontSize: 13, fontWeight: '600', marginTop: 2 },
+  searchField: { minHeight: 45, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#EEF0EC', borderRadius: 12, backgroundColor: C.white, shadowColor: '#293221', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 }, searchInput: { flex: 1, minWidth: 0, height: 44, padding: 0, color: C.ink, fontSize: 13 },
+  listSummary: { paddingHorizontal: 18, paddingTop: 13, paddingBottom: 7, flexDirection: 'row', justifyContent: 'space-between' }, summaryText: { color: '#929A94', fontSize: 10, fontWeight: '500' }, deviceList: { gap: 10, paddingHorizontal: 14, paddingTop: 4, paddingBottom: 16 }, deviceCard: { minHeight: 114, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, borderRadius: 14, backgroundColor: C.white, elevation: 2, shadowColor: '#1F2C19', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }, deviceThumb: { alignItems: 'center', justifyContent: 'center', borderRadius: 11, backgroundColor: '#F4F7F1' }, deviceCardBody: { flex: 1, minWidth: 0, alignSelf: 'stretch', justifyContent: 'center' }, deviceName: { color: C.ink, fontSize: 13, fontWeight: '700' }, deviceId: { color: '#929A94', fontSize: 9, marginTop: 2 }, deviceLocation: { color: '#7C857E', fontSize: 10, marginTop: 4 }, chipRow: { flexDirection: 'row', gap: 5, marginTop: 7 }, statusChip: { maxWidth: 100, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 6 }, statusChipText: { fontSize: 9, fontWeight: '600' }, deviceCardMeta: { width: 63, alignItems: 'flex-end', alignSelf: 'stretch', justifyContent: 'center' }, onlineDot: { width: 8, height: 8, borderRadius: 5, marginBottom: 4 }, lastLabel: { color: '#A1A7A2', fontSize: 8 }, lastTime: { maxWidth: '100%', marginTop: 2, color: '#626B64', fontSize: 8, lineHeight: 11, textAlign: 'right' },
+  bottomTabs: { minHeight: 60, paddingTop: 3, paddingBottom: Platform.OS === 'android' ? 4 : 2, flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E9ECE7', backgroundColor: C.white }, tabButton: { flex: 1, height: 54, alignItems: 'center', justifyContent: 'center', gap: 2 }, tabLabel: { color: '#999F9A', fontSize: 9, lineHeight: 12, fontWeight: '500' }, tabLabelActive: { color: C.greenDark, fontWeight: '700' }, notificationsLink: { minHeight: 44, marginTop: 5, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: '#F1F6E9' }, notificationsLinkText: { flex: 1, color: C.greenDark, fontSize: 12, fontWeight: '600' },
+  emptyBox: { minHeight: 170, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 18 }, emptyInline: { minHeight: 56, justifyContent: 'center' }, emptyText: { color: '#929A94', fontSize: 13, textAlign: 'center' },
+  mapScreen: { flex: 1, backgroundColor: '#E6EBE1' }, mapHeader: { height: 48, zIndex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 16, paddingRight: 8, backgroundColor: '#FFFFFFF0' }, mapOverlay: { position: 'absolute', zIndex: 2, top: 58, left: 12, right: 12 }, mapSearch: { borderColor: '#E5EAE2' }, mapNotice: { position: 'absolute', zIndex: 1, top: 115, left: 14, right: 14, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: '#FFFFFFEE' }, mapNoticeText: { flex: 1, color: '#6E786F', fontSize: 10, lineHeight: 14 }, mapCount: { position: 'absolute', bottom: 14, left: 12, paddingHorizontal: 10, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, backgroundColor: '#FFFFFFF2', elevation: 2 }, mapCountText: { color: '#6F7970', fontSize: 10 }, markerBubble: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, borderRadius: 19, borderBottomLeftRadius: 5, elevation: 4 }, mapDeviceCard: { position: 'absolute', bottom: 54, left: 12, right: 12, minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 9, padding: 10, borderRadius: 13, backgroundColor: C.white, elevation: 5, shadowColor: '#162015', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }, mapDeviceName: { color: C.ink, fontSize: 13, fontWeight: '700' }, mapDeviceMeta: { color: C.muted, fontSize: 10, marginTop: 3 },
+  standardScroll: { paddingHorizontal: 16, paddingTop: 11, paddingBottom: 22 }, infoNote: { marginTop: 11, padding: 10, flexDirection: 'row', gap: 7, alignItems: 'center', borderWidth: 1, borderColor: '#E7EDDE', borderRadius: 10, backgroundColor: '#F4F8EE' }, infoNoteText: { flex: 1, color: '#6F7A6E', fontSize: 10, lineHeight: 15 }, statsRow: { flexDirection: 'row', gap: 10, marginTop: 12 }, statCard: { flex: 1, minHeight: 102, padding: 11, borderRadius: 12, backgroundColor: C.white, elevation: 1 }, statIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 9 }, statValue: { marginTop: 8, color: C.ink, fontSize: 19, fontWeight: '700' }, statLabel: { marginTop: 1, color: C.muted, fontSize: 10 }, sectionTitleSmall: { color: C.ink, fontSize: 13, fontWeight: '700', marginTop: 16, marginBottom: 8 }, metricCard: { marginTop: 10, padding: 13, borderRadius: 13, backgroundColor: C.white, elevation: 2, shadowColor: '#192512', shadowOpacity: 0.04, shadowRadius: 7, shadowOffset: { width: 0, height: 2 } }, metricHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }, metricName: { color: C.ink, fontSize: 12, fontWeight: '700' }, metricCaption: { color: '#999F9A', fontSize: 9, marginTop: 2 }, metricValue: { marginTop: 12, color: C.greenDark, fontSize: 25, fontWeight: '700', textAlign: 'center' }, metricFooter: { minHeight: 27, marginTop: 10, paddingTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line }, metricFooterText: { color: '#9CA39D', fontSize: 9 }, gauge: { height: 106, alignItems: 'center', justifyContent: 'flex-end', overflow: 'hidden' }, gaugeArc: { position: 'absolute', bottom: 0, width: 160, height: 80, borderWidth: 12, borderBottomWidth: 0, borderColor: '#C8E0E8', borderTopLeftRadius: 100, borderTopRightRadius: 100 }, gaugeNeedle: { position: 'absolute', left: 70, top: 46, width: 45, height: 2, backgroundColor: C.blue, transform: [{ rotate: '-37deg' }] }, gaugeValue: { marginBottom: 7, color: '#347F9B', fontSize: 22, fontWeight: '700' }, gaugeUnit: { fontSize: 13, fontWeight: '500' },
+  profileScroll: { paddingHorizontal: 17, paddingTop: 9, paddingBottom: 20 }, profileHeading: { marginTop: 3, color: C.ink, fontSize: 19, fontWeight: '700', textAlign: 'center' }, profileHero: { alignItems: 'center', paddingTop: 12, paddingBottom: 18 }, avatar: { width: 82, height: 82, overflow: 'hidden', borderWidth: 3, borderColor: C.white, borderRadius: 42, backgroundColor: '#E8F0DF', elevation: 2 }, avatarImage: { width: '100%', height: '100%' }, profileName: { color: C.ink, fontSize: 15, fontWeight: '700', marginTop: 9 }, profileEmail: { color: '#969D98', fontSize: 10, marginTop: 3 }, profileMenu: { overflow: 'hidden', borderRadius: 13, backgroundColor: C.white, elevation: 2 }, menuRow: { minHeight: 53, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EBEEEA' }, menuTitle: { flex: 1, color: C.ink, fontSize: 12, fontWeight: '600' }, menuValue: { color: '#969D98', fontSize: 10, marginTop: 2 }, profileFootnote: { marginTop: 14, color: '#A2A8A3', fontSize: 10, textAlign: 'center' },
+  detailScroll: { paddingBottom: 18 }, detailSummary: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 15, paddingBottom: 12 }, detailName: { color: C.ink, fontSize: 16, fontWeight: '700' }, detailId: { color: '#7E8780', fontSize: 10, marginTop: 3 }, detailHeard: { color: '#969D98', fontSize: 9, marginTop: 3 }, detailFields: { flexDirection: 'row', gap: 9, paddingHorizontal: 16 }, detailField: { minHeight: 58, flex: 1, padding: 10, borderRadius: 10, backgroundColor: C.white, elevation: 1 }, detailFieldLabel: { color: '#A1A7A2', fontSize: 9 }, detailFieldValue: { color: C.ink, fontSize: 11, fontWeight: '600', marginTop: 5 }, expandButton: { minHeight: 35, marginHorizontal: 16, marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 9, backgroundColor: C.greenPale }, expandButtonText: { color: C.greenDark, fontSize: 11, fontWeight: '600' }, expandedDetails: { marginHorizontal: 16, marginTop: 8, padding: 10, borderRadius: 10, backgroundColor: C.white }, expandedLine: { color: '#727B74', fontSize: 10, lineHeight: 16 }, bold: { color: '#465047', fontWeight: '700' }, outputGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, paddingHorizontal: 16 }, outputCard: { position: 'relative', width: '48%', minHeight: 74, padding: 10, borderRadius: 11, backgroundColor: C.white, elevation: 1 }, outputLabel: { color: C.muted, fontSize: 9 }, outputValue: { color: C.ink, fontSize: 14, fontWeight: '700', marginTop: 6, paddingRight: 12 }, outputDot: { position: 'absolute', right: 9, bottom: 10, width: 10, height: 10, borderRadius: 6 }, detailSectionHeader: { marginHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, miniMap: { height: 170, marginHorizontal: 16, overflow: 'hidden', borderRadius: 11, backgroundColor: '#E9EEE6' }, miniMapMessage: { position: 'absolute', left: 10, right: 10, top: 10, padding: 9, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 8, backgroundColor: '#FFFFFFEE' }, miniMapText: { flex: 1, color: '#70796F', fontSize: 10 }, detailActions: { flexDirection: 'row', gap: 9, marginHorizontal: 16, marginTop: 11 },
+  profileFootnote: { marginTop: 14, color: '#A2A8A3', fontSize: 10, textAlign: 'center' },
+  noticeDate: { marginHorizontal: 16, marginTop: 14, marginBottom: 7, color: '#8B938D', fontSize: 10, fontWeight: '700' }, noticeRow: { minHeight: 69, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E8ECE7', backgroundColor: C.white }, noticeImage: { width: 38, height: 38, borderRadius: 20 }, noticeTitle: { color: C.ink, fontSize: 11, fontWeight: '700' }, noticeLocation: { color: '#969D98', fontSize: 9, marginTop: 3 }, noticeTime: { alignItems: 'flex-end', gap: 4 }, noticeTimeText: { color: '#9AA19B', fontSize: 9 }, unreadCount: { minWidth: 17, height: 17, paddingHorizontal: 4, overflow: 'hidden', borderRadius: 9, backgroundColor: C.green, color: C.white, fontSize: 9, textAlign: 'center', textAlignVertical: 'center' },
+  modalScrim: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#10171299' }, sheet: { maxHeight: '84%', paddingTop: 8, paddingHorizontal: 18, paddingBottom: Platform.OS === 'ios' ? 25 : 14, borderTopLeftRadius: 20, borderTopRightRadius: 20, backgroundColor: C.white }, sheetGrabber: { width: 36, height: 4, alignSelf: 'center', marginBottom: 13, borderRadius: 4, backgroundColor: '#D9DED8' }, sheetTitle: { color: C.ink, fontSize: 17, fontWeight: '700', textAlign: 'center' }, sheetSubtitle: { alignSelf: 'center', maxWidth: 300, marginTop: 5, marginBottom: 12, color: '#969D98', fontSize: 11, lineHeight: 16, textAlign: 'center' }, sheetContent: { flexShrink: 1 }, sheetActions: { flexDirection: 'row', gap: 9, marginTop: 12 }, optionRow: { minHeight: 49, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EEF0EC' }, optionTitle: { color: C.ink, fontSize: 12, fontWeight: '500' }, optionSubtitle: { color: C.muted, fontSize: 10, marginTop: 3 }, sheetEmpty: { padding: 15, color: C.muted, fontSize: 12, textAlign: 'center' }, jsonInput: { minHeight: 96, marginTop: 6, textAlignVertical: 'top', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 12 },
+  toast: { position: 'absolute', left: 20, right: 20, bottom: 74, zIndex: 20, minHeight: 38, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: '#26312B', elevation: 5 }, toastText: { color: C.white, fontSize: 11, textAlign: 'center' }, loadingOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8F9F7AA' },
 });

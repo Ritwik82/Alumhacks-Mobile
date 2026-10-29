@@ -5,10 +5,19 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "plugins": [
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
     "android": {
-      "package": "com.alumhacks.mobile",
-      "usesCleartextTraffic": true
+      "package": "com.alumhacks.mobile"
     },
     "ios": {
       "bundleIdentifier": "com.alumhacks.mobile",
