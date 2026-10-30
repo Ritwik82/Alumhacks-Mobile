@@ -142,11 +142,11 @@ export class GinjerClient {
 }
 
 export const demoDevices = [
-  { name: 'Cold Chain', id: 'ECFAF446947298', heard: '50 Mins', chips: [{ label: 'Moderate', status: 'amber' }, { label: 'Humid', status: 'blue' }], kind: 'snow', loc: 'Green park', output: 'Cold Room', outputs: [] },
-  { name: 'Level Sensor', id: 'ECFAF4469472DD', heard: '50 Mins', chips: [{ label: 'Empty', status: 'red' }, { label: 'Full', status: 'green' }], kind: 'water', loc: 'Tank 6', output: 'Reservoir A', outputs: [] },
-  { name: 'IO Controller', id: 'ECFAF44694729A', heard: '02 Feb 2024 02:25', chips: [{ label: 'ON', status: 'green' }, { label: 'Full', status: 'green' }], kind: 'controller', loc: 'Lab Room', output: 'Lab Room', outputs: [] },
-  { name: 'Panic Button', id: 'ECFAF44694729B', heard: '02 Feb 2024 02:15', chips: [{ label: 'SOS', status: 'red' }, { label: 'Low', status: 'amber' }], kind: 'alert', loc: 'John Doe · Block B', output: 'Block B, level 2', outputs: [] },
-  { name: 'Air Quality Sensor', id: 'ECFAF4469472CC', heard: '02 Feb 2024 01:43', chips: [{ label: 'Poor', status: 'red' }, { label: 'Full', status: 'green' }], kind: 'air', loc: 'Saket', output: 'Saket Office', outputs: [] },
+  { name: 'Cold Chain', id: 'ECFAF446947298', heard: '50 Mins', chips: [{ label: 'Moderate', status: 'amber' }, { label: 'Humid', status: 'blue' }], kind: 'snow', loc: 'Green park', output: 'Cold Room', outputs: [], position: { lat: 28.5584, lng: 77.2028, placeName: 'Green park' } },
+  { name: 'Level Sensor', id: 'ECFAF4469472DD', heard: '50 Mins', chips: [{ label: 'Empty', status: 'red' }, { label: 'Full', status: 'green' }], kind: 'water', loc: 'Tank 6', output: 'Reservoir A', outputs: [], position: { lat: 28.5494, lng: 77.2001, placeName: 'Tank 6' } },
+  { name: 'IO Controller', id: 'ECFAF44694729A', heard: '02 Feb 2024 02:25', chips: [{ label: 'ON', status: 'green' }, { label: 'Full', status: 'green' }], kind: 'controller', loc: 'Lab Room', output: 'Lab Room', outputs: [], position: { lat: 28.5492, lng: 77.2528, placeName: 'Lab Room' } },
+  { name: 'Panic Button', id: 'ECFAF44694729B', heard: '02 Feb 2024 02:15', chips: [{ label: 'SOS', status: 'red' }, { label: 'Low', status: 'amber' }], kind: 'alert', loc: 'John Doe · Block B', output: 'Block B, level 2', outputs: [], position: { lat: 28.5244, lng: 77.2167, placeName: 'John Doe · Block B' } },
+  { name: 'Air Quality Sensor', id: 'ECFAF4469472CC', heard: '02 Feb 2024 01:43', chips: [{ label: 'Poor', status: 'red' }, { label: 'Full', status: 'green' }], kind: 'air', loc: 'Saket', output: 'Saket Office', outputs: [], position: { lat: 28.6315, lng: 77.2167, placeName: 'Saket' } },
 ];
 
 export const demoNotices = [
