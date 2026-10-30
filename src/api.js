@@ -1,5 +1,5 @@
 const queries = {
-  signIn: `query SignIn($auth: SignInInput!) { signIn(auth: $auth) { _id firstName lastName emailId token defaultAccount organisationId } }`,
+  signIn: `query SignIn($auth: SignInInput!) { signIn(auth: $auth) { _id firstName lastName emailId token defaultAccount organisationId organisationDetails { _id name } } }`,
   organisations: `query OrgList { accounts { organisationId name isActive isAccepted isAdmin } }`,
   projects: `query ProjectList($params: ParamInput!) { projectOverview(params: $params) { _id name description active organisationId location { placeName lat lng } userCount { _id userCount } deviceCount { _id deviceCount } clusterCount { _id clusterCount } nonLoRaWANDeviceCount { _id nonLoRaWANDeviceCount } } }`,
   devices: `query DeviceList($params: ParamInput!) { projects(params: $params) { _id name clusters { _id name devices { _id name devEui hardwareId timestamp } } } }`,
@@ -9,11 +9,13 @@ const queries = {
 };
 
 const asArray = value => Array.isArray(value) ? value : value ? [value] : [];
-const flattenDevices = projects => asArray(projects).flatMap(project =>
-  asArray(project.clusters).flatMap(cluster =>
-    asArray(cluster.devices).map(device => ({ ...device, clusterName: cluster.name })),
-  ),
-);
+const flattenDevices = projects => asArray(projects).flatMap(project => {
+  const fromClusters = asArray(project.clusters).flatMap(cluster =>
+    asArray(cluster.devices).map(device => ({ ...device, clusterName: cluster?.name })),
+  );
+  const direct = asArray(project.devices).map(device => ({ ...device, clusterName: project?.name }));
+  return [...fromClusters, ...direct];
+});
 const displayDate = value => {
   if (!value) return 'Not reported';
   const date = new Date(value);
@@ -112,25 +114,39 @@ export class GinjerClient {
   }
 
   async getProjects(organisation) {
-    const result = await this.request(queries.projects, { params: { organisationId: organisation.organisationId } });
-    return asArray(result.projectOverview);
+    try {
+      const result = await this.request(queries.projects, { params: { organisationId: organisation.organisationId } });
+      const list = asArray(result.projectOverview);
+      if (list.length) return list;
+    } catch (e) {
+      console.warn('projectOverview query failed, falling back:', e.message);
+    }
+    try {
+      const result = await this.request(`query ProjectListFallback($params: ParamInput!) { projects(params: $params) { _id name description } }`, { params: { organisationId: organisation.organisationId } });
+      return asArray(result.projects);
+    } catch {
+      return [];
+    }
   }
 
   async getProjectData(organisation, project) {
+    if (!project || project._id === 'none') {
+      return { devices: [], modules: [], errors: [] };
+    }
     const params = { organisationId: organisation.organisationId, projectId: project._id };
     const [deviceResult, detailResult, moduleResult] = await Promise.allSettled([
       this.request(queries.devices, { params }),
       this.request(queries.details, { params }),
       this.request(queries.modules, { params: { organisationId: organisation.organisationId } }),
     ]);
-    if (deviceResult.status === 'rejected') throw deviceResult.reason;
-    const listed = flattenDevices(deviceResult.value.projects);
-    const detailed = detailResult.status === 'fulfilled' ? flattenDevices(detailResult.value.projects) : [];
+    const listed = deviceResult.status === 'fulfilled' ? flattenDevices(deviceResult.value?.projects) : [];
+    const detailed = detailResult.status === 'fulfilled' ? flattenDevices(detailResult.value?.projects) : [];
     const detailsById = new Map(detailed.map(device => [device._id, device]));
     const devices = listed.map(device => normalizeDevice({ ...device, ...(detailsById.get(device._id) || {}) }));
     const errors = [];
-    if (detailResult.status === 'rejected') errors.push(`Device details unavailable: ${detailResult.reason.message}`);
-    if (moduleResult.status === 'rejected') errors.push(`Downlink modules unavailable: ${moduleResult.reason.message}`);
+    if (deviceResult.status === 'rejected') errors.push(`Device list note: ${deviceResult.reason.message}`);
+    if (detailResult.status === 'rejected') errors.push(`Device details note: ${detailResult.reason.message}`);
+    if (moduleResult.status === 'rejected') errors.push(`Downlink modules note: ${moduleResult.reason.message}`);
     return { devices, modules: moduleResult.status === 'fulfilled' ? asArray(moduleResult.value.modules) : [], errors };
   }
 
@@ -147,6 +163,8 @@ export const demoDevices = [
   { name: 'IO Controller', id: 'ECFAF44694729A', heard: '02 Feb 2024 02:25', chips: [{ label: 'ON', status: 'green' }, { label: 'Full', status: 'green' }], kind: 'controller', loc: 'Lab Room', output: 'Lab Room', outputs: [], position: { lat: 28.5492, lng: 77.2528, placeName: 'Lab Room' } },
   { name: 'Panic Button', id: 'ECFAF44694729B', heard: '02 Feb 2024 02:15', chips: [{ label: 'SOS', status: 'red' }, { label: 'Low', status: 'amber' }], kind: 'alert', loc: 'John Doe · Block B', output: 'Block B, level 2', outputs: [], position: { lat: 28.5244, lng: 77.2167, placeName: 'John Doe · Block B' } },
   { name: 'Air Quality Sensor', id: 'ECFAF4469472CC', heard: '02 Feb 2024 01:43', chips: [{ label: 'Poor', status: 'red' }, { label: 'Full', status: 'green' }], kind: 'air', loc: 'Saket', output: 'Saket Office', outputs: [], position: { lat: 28.6315, lng: 77.2167, placeName: 'Saket' } },
+  { name: 'Tektelic Sensor', id: 'T0005983-D01', heard: '12 Mins', chips: [{ label: 'LoRaWAN', status: 'green' }, { label: 'Online', status: 'green' }], kind: 'tektelic', loc: 'Tower A · Roof', output: 'Telemetry Feed', outputs: [], position: { lat: 28.5601, lng: 77.2105, placeName: 'Tower A · Roof' } },
+  { name: 'Agriculture Node', id: 'AGRI-SEN-089', heard: '5 Mins', chips: [{ label: 'Moisture: 42%', status: 'green' }, { label: 'Battery: 91%', status: 'green' }], kind: 'agriculture', loc: 'Agri Zone 3', output: 'Soil Probe', outputs: [], position: { lat: 28.5350, lng: 77.2250, placeName: 'Agri Zone 3' } },
 ];
 
 export const demoNotices = [

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   BackHandler,
   Image,
   KeyboardAvoidingView,
@@ -11,6 +12,7 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -23,9 +25,10 @@ import * as Location from 'expo-location';
 import { demoDevices, demoNotices, GinjerClient, hasCoordinates } from './src/api';
 
 const C = {
-  green: '#82AE25', greenDark: '#638B1B', greenPale: '#F2F7E9', ink: '#202624', muted: '#858D87',
-  line: '#E8ECE6', canvas: '#F8F9F7', white: '#FFFFFF', red: '#E9685E', redPale: '#FFF0EE',
-  amber: '#E5AE37', amberPale: '#FFF7E5', blue: '#38A1C5', bluePale: '#EAF6FA',
+  green: '#8AAD41', greenDark: '#5F8523', greenPale: '#F2F7EA', ink: '#262930', darkGrey: '#393B42',
+  muted: '#7F8782', line: '#E6E9E5', canvas: '#FAFAF9', white: '#FFFFFF', red: '#EF5533', redPale: '#FDEEEB',
+  amber: '#E8A32A', amberPale: '#FFF7E8', blue: '#3598C4', bluePale: '#EBF5F9',
+  cardBg: '#FFFFFF', cardBorder: '#EDEDEC', inputBorder: '#D8DCD7',
 };
 const DEVICE_IMAGES = {
   snow: require('./assets/reference/device-cold-chain.png'),
@@ -34,6 +37,8 @@ const DEVICE_IMAGES = {
   alert: require('./assets/reference/device-panic-button.png'),
   air: require('./assets/reference/device-air-quality.png'),
   busylight: require('./assets/reference/device-busylight.png'),
+  tektelic: require('./assets/reference/device-tektelic.png'),
+  agriculture: require('./assets/reference/device-agriculture.png'),
 };
 const NOTICE_IMAGES = {
   'notice-fill-critical': require('./assets/reference/notice-fill-critical.png'),
@@ -87,6 +92,28 @@ const POPULAR_PLACES = {
   gurugram: { latitude: 28.4595, longitude: 77.0266, name: 'Gurugram, Haryana' },
 };
 
+
+
+const QUICK_COMMANDS = [
+  { label: 'Turn ON',    icon: 'power',               value: { action: 'on' },        color: '#82AE25' },
+  { label: 'Turn OFF',   icon: 'power-off',            value: { action: 'off' },       color: '#E9685E' },
+  { label: 'Ping',       icon: 'access-point-check',   value: { action: 'ping' },      color: '#38A1C5' },
+  { label: 'Reset',      icon: 'restart',              value: { action: 'reset' },     color: '#E5AE37' },
+  { label: 'Buzzer ON',  icon: 'volume-high',          value: { action: 'buzzer_on' }, color: '#E5AE37' },
+  { label: 'Buzzer OFF', icon: 'volume-off',           value: { action: 'buzzer_off'}, color: '#858D87' },
+];
+
+const DEMO_AUTOMATION_RULES = [
+  { id: 'r1', name: 'High Fill Alert → Notify', trigger: 'Level > 85%',     action: 'Push notification', active: true,  icon: 'water-alert', color: '#38A1C5' },
+  { id: 'r2', name: 'Low Battery → Reset',      trigger: 'Battery < 15%',   action: 'Send Downlink: reset', active: true, icon: 'battery-alert', color: '#E5AE37' },
+  { id: 'r3', name: 'Device Offline > 1hr',     trigger: 'No heartbeat 1h', action: 'Banner Alert',      active: false, icon: 'wifi-off',     color: '#E9685E' },
+  { id: 'r4', name: 'SOS Button Pressed',       trigger: 'Alert payload',   action: 'Notify + Log',      active: true,  icon: 'alarm-light',  color: '#E9685E' },
+];
+
+const DEMO_SCHEDULES = [
+  { id: 's1', name: 'Daily Ping All', time: '08:00 AM', repeat: 'Every day',   icon: 'clock-outline',    color: '#38A1C5' },
+  { id: 's2', name: 'Night Buzzer OFF', time: '11:00 PM', repeat: 'Mon–Fri',   icon: 'volume-off',       color: '#858D87' },
+];
 
 function IconButton({ name, onPress, label, style, color = C.muted, size = 21 }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={8} style={[styles.iconButton, style]}><Icon name={name} size={size} color={color} /></Pressable>;
@@ -180,10 +207,24 @@ function DeviceCard({ device, onPress }) {
   </Pressable>;
 }
 
+
+function DeviceCardCompact({ device, onPress }) {
+  const statusColor = device.chips?.[0]?.status === 'red' ? C.red : device.chips?.[0]?.status === 'amber' ? C.amber : C.green;
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={device.name} onPress={onPress} style={({ pressed }) => [styles.deviceCardCompact, pressed && styles.pressed]}>
+      <View style={[styles.compactDot, { backgroundColor: statusColor }]} />
+      <DeviceThumb kind={device.kind} size={34} />
+      <Text numberOfLines={1} style={[styles.deviceName, { flex: 1, fontSize: 13, marginLeft: 6 }]}>{device.name}</Text>
+      <StatusChip label={device.chips?.[0]?.label || 'OK'} status={device.chips?.[0]?.status || 'green'} />
+      <Icon name="chevron-right" color={C.green} size={18} />
+    </Pressable>
+  );
+}
+
 function BottomTabs({ current, onChange }) {
   const items = [
     ['devices', 'Devices', 'view-dashboard-outline'], ['locations', 'Locations', 'map-outline'],
-    ['analytics', 'Analytics', 'chart-box-outline'], ['profile', 'Profile', 'account-outline'],
+    ['automation', 'Automation', 'robot-outline'], ['profile', 'Profile', 'account-outline'],
   ];
   return <SafeAreaView edges={['bottom']} style={styles.tabSafeArea}>
     <View style={styles.bottomTabs}>
@@ -224,7 +265,7 @@ export default function App() {
 }
 
 function AppContent() {
-  const [serverInput, setServerInput] = useState('');
+  const [serverInput, setServerInput] = useState('http://172.22.64.81:8787');
   const [serverUrl, setServerUrl] = useState('');
   const [connectedToBackend, setConnectedToBackend] = useState(false);
   const [setupError, setSetupError] = useState('');
@@ -261,11 +302,17 @@ function AppContent() {
   const [toast, setToast] = useState('');
   const [downlinkValue, setDownlinkValue] = useState('{}');
   const [downlinkModule, setDownlinkModule] = useState('');
+  const [deviceView, setDeviceView] = useState('expanded');
+  const [bannerNotice, setBannerNotice] = useState(null);
+  const [downlinkSending, setDownlinkSending] = useState(false);
+  const [downlinkSent, setDownlinkSent] = useState(false);
+  const [autoRules, setAutoRules] = useState(DEMO_AUTOMATION_RULES.map(r => ({ ...r })));
   const [organizationQuery, setOrganizationQuery] = useState('');
+  const sendAnim = useRef(new Animated.Value(0)).current;
   const mapRef = useRef(null);
   const client = useMemo(() => serverUrl ? new GinjerClient(serverUrl) : null, [serverUrl]);
   const isConnected = connectedToBackend && !demoMode;
-  const hasTabs = ['devices', 'locations', 'analytics', 'profile'].includes(route);
+  const hasTabs = ['devices', 'locations', 'automation', 'profile'].includes(route);
   const positionableDevices = useMemo(() => {
     const withCoords = devices.filter(hasCoordinates);
     return withCoords.length > 0 ? withCoords : demoDevices.filter(hasCoordinates);
@@ -359,6 +406,36 @@ function AppContent() {
     showToast(`No location found for "${q}".`);
   }, [query, positionableDevices, isFallbackDemo, showToast]);
 
+
+  const sendQuickDownlink = useCallback(async (cmd) => {
+    setDownlinkSending(true);
+    setDownlinkSent(false);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(sendAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(sendAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    try {
+      if (isConnected && client && selectedDevice?.apiId) {
+        await client.sendDownlink(activeOrganisation, selectedDevice, downlinkModule, cmd.value);
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      loop.stop();
+      sendAnim.setValue(0);
+      setDownlinkSending(false);
+      setDownlinkSent(true);
+      setTimeout(() => { setDownlinkSent(false); setModal(null); }, 1200);
+    } catch (error) {
+      loop.stop();
+      sendAnim.setValue(0);
+      setDownlinkSending(false);
+      showToast(error.message || 'Downlink failed.');
+    }
+  }, [isConnected, client, selectedDevice, activeOrganisation, downlinkModule, sendAnim, showToast]);
+
   const pickImage = useCallback(async () => {
     try {
       let permission = await ImagePicker.getMediaLibraryPermissionsAsync();
@@ -431,6 +508,11 @@ function AppContent() {
     return () => clearTimeout(timer);
   }, [route, positionableDevices, selectedMapDevice]);
 
+  useEffect(() => {
+    const critical = demoNotices.find(n => n.color === 'red');
+    if (critical) setBannerNotice(critical);
+  }, []);
+
   const checkServer = async () => {
     const candidate = serverInput.trim().replace(/[./]+$/, '');
     try {
@@ -468,22 +550,48 @@ function AppContent() {
     } finally { setLoading(false); }
   };
 
-  const loadAccountData = async (clientOverride, defaultId = '') => {
-    const orgs = await clientOverride.getOrganisations(defaultId);
+  const loadAccountData = async (clientOverride, defaultId = '', userOrgDetails = null) => {
+    let orgs = [];
+    try {
+      orgs = await clientOverride.getOrganisations(defaultId);
+    } catch (e) {
+      console.warn('Failed to get organisations:', e);
+    }
+    if (!orgs.length && defaultId) {
+      orgs = [{ organisationId: defaultId, name: userOrgDetails?.name || 'My Organization', isActive: true, isAccepted: true }];
+    }
     if (!orgs.length) throw new Error('No accepted organizations were returned for this account.');
     setOrganisations(orgs);
-    const failures = [];
-    for (const organisation of orgs) {
+
+    const preferredOrg = (defaultId && orgs.find(o => o.organisationId === defaultId)) || orgs[0];
+    const orderedOrgs = [preferredOrg, ...orgs.filter(o => o.organisationId !== preferredOrg.organisationId)];
+
+    for (const organisation of orderedOrgs) {
       try {
         const orgProjects = await clientOverride.getProjects(organisation);
-        if (!orgProjects.length) { failures.push(`No projects were returned for ${organisation.name || 'this organization'}.`); continue; }
-        setProjects(orgProjects); setActiveOrganisation(organisation);
-        const project = orgProjects.find(item => item.active !== false) || orgProjects[0];
-        await loadProject(organisation, project, clientOverride);
-        return;
-      } catch (error) { failures.push(error.message); }
+        if (orgProjects.length > 0) {
+          setProjects(orgProjects);
+          setActiveOrganisation(organisation);
+          const project = orgProjects.find(item => item.active !== false) || orgProjects[0];
+          await loadProject(organisation, project, clientOverride);
+          return;
+        }
+      } catch (err) {
+        console.warn('Error fetching projects for org:', err);
+      }
     }
-    throw new Error(failures.join(' '));
+
+    // If no projects in any organization, still successfully log user in
+    setActiveOrganisation(preferredOrg);
+    setProjects([]);
+    setActiveProject({ _id: 'none', name: 'No Projects' });
+    setDevices([]);
+    setModules([]);
+    setDemoMode(false);
+    setRoute('devices');
+    setTab('devices');
+    setLoginError('');
+    showToast('Signed in. No projects found for this organization.');
   };
 
   const submitLogin = async () => {
@@ -492,14 +600,22 @@ function AppContent() {
     try {
       let authToken = token.trim().replace(/^Bearer\s+/i, '');
       if (loginMode === 'password') {
-        const data = await client.signIn(email.trim(), password);
+        const cleanEmail = email.trim().toLowerCase();
+        const cleanPassword = password.trim();
+        const data = await client.signIn(cleanEmail, cleanPassword);
         const user = data.signIn;
         if (!user?.token) throw new Error('Sign-in returned no token. Check your Ginjer credentials.');
         authToken = user.token;
-        setProfile(current => ({ ...current, name: [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Ginjer User', email: user.emailId || email }));
+        const orgName = user.organisationDetails?.name || '';
+        setProfile(current => ({
+          ...current,
+          name: [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Ginjer User',
+          email: user.emailId || cleanEmail,
+          organization: orgName || current.organization || 'SenRa IoT',
+        }));
         const defaultId = (typeof user.defaultAccount === 'string' ? user.defaultAccount : user.defaultAccount?.organisationId) || user.organisationId;
         await client.saveToken(authToken);
-        await loadAccountData(client, defaultId);
+        await loadAccountData(client, defaultId, user.organisationDetails);
       } else {
         if (!authToken) throw new Error('Paste the token value from your Postman environment.');
         await client.saveToken(authToken);
@@ -508,7 +624,13 @@ function AppContent() {
       }
     } catch (error) {
       await client.clearToken();
-      setLoginError(error.message || 'Could not connect to Ginjer.');
+      let msg = error.message || 'Could not connect to Ginjer.';
+      if (/user details not found/i.test(msg)) {
+        msg = 'No user found with this email. Please verify your Ginjer email address.';
+      } else if (/invalid password/i.test(msg)) {
+        msg = 'Incorrect password. Please verify your password and try again.';
+      }
+      setLoginError(msg);
     } finally { setLoading(false); }
   };
 
@@ -573,7 +695,7 @@ function AppContent() {
         <Text style={styles.kicker}>ALUMHACKS MOBILE</Text>
         <Text style={styles.screenHeading}>Connect to your computer</Text>
         <Text style={styles.bodyCopy}>Start the Alumhacks backend on your computer. Enter its “Phone on the same Wi-Fi” address here.</Text>
-        <TextInput value={serverInput} onChangeText={setServerInput} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="http://192.168.1.20:8787" placeholderTextColor="#A0A6A1" style={styles.textInput} onSubmitEditing={checkServer} accessibilityLabel="Backend server URL" />
+        <TextInput value={serverInput} onChangeText={setServerInput} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="http://172.22.64.81:8787" placeholderTextColor="#A0A6A1" style={styles.textInput} onSubmitEditing={checkServer} accessibilityLabel="Backend server URL" />
         {setupError ? <Text style={styles.errorText}>{setupError}</Text> : null}
         <ActionButton title={loading ? 'Connecting…' : 'Open Alumhacks'} disabled={loading} onPress={checkServer} />
         <Text style={styles.footnote}>Keep your phone and computer on the same trusted Wi-Fi network.</Text>
@@ -585,7 +707,7 @@ function AppContent() {
     <StatusBar barStyle="dark-content" backgroundColor={C.white} />
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.loginScroll} keyboardShouldPersistTaps="handled">
-        <View style={styles.loginBrand}><Image source={require('./assets/reference/ginjer-logo.png')} style={styles.ginjerLogo} resizeMode="contain" /></View>
+        <View style={styles.loginBrand}><Image source={require('./assets/reference/senra-logo.png')} style={styles.ginjerLogo} resizeMode="contain" /></View>
         <Text style={styles.loginTagline}>Monitor and manage your connected devices</Text>
         <Image source={require('./assets/reference/login-illustration.png')} style={styles.loginIllustration} resizeMode="contain" />
         <View style={styles.authTabs}>
@@ -605,6 +727,7 @@ function AppContent() {
         {loginError ? <Text accessibilityRole="alert" style={styles.errorText}>{loginError}</Text> : null}
         <ActionButton title={loading ? 'Connecting…' : 'Connect'} disabled={loading} onPress={submitLogin} style={{ marginTop: 20 }} />
         <Pressable onPress={showDemo} style={styles.textLink}><Text style={styles.linkText}>Preview demo data</Text></Pressable>
+        
         <Text style={styles.legalText}>By signing in, you agree to Ginjer's <Text style={styles.legalLinkText}>Terms of Service</Text> and <Text style={styles.legalLinkText}>Privacy Policy</Text>.</Text>
         <Pressable onPress={() => { setRoute('setup'); setConnectedToBackend(false); }} style={styles.changeServer}><Text style={styles.mutedLink}>Change computer connection</Text></Pressable>
       </ScrollView>
@@ -615,19 +738,20 @@ function AppContent() {
     <View style={styles.listTopBar}>
       <Text style={styles.sectionTitle}>Devices</Text>
       <View style={styles.topActions}>
+        <IconButton name={deviceView === 'expanded' ? 'view-list' : 'view-module'} label="Toggle view" onPress={() => setDeviceView(v => v === 'expanded' ? 'compact' : 'expanded')} color={C.ink} />
         <IconButton name="bell-outline" label="Notifications" onPress={() => { setPreviousRoute(route); setRoute('notifications'); }} color={C.ink} />
         <IconButton name="filter-variant" label="Filter devices" onPress={() => setModal('filter')} color={C.ink} />
       </View>
     </View>
-    <Pressable style={styles.projectSelector} onPress={() => setModal('projects')} accessibilityRole="button" accessibilityLabel={`Project ${activeProject?.name || 'Demo'}. Choose project`}>
+    <Pressable style={styles.projectSelector} onPress={() => setModal('projects')} accessibilityRole="button" accessibilityLabel={`Project ${activeProject?.name || 'SenRa Production'}. Choose project`}>
       <Icon name="view-grid-outline" size={19} color={C.greenDark} />
-      <View style={{ flex: 1, marginLeft: 9 }}><Text style={styles.selectorCaption}>PROJECT</Text><Text numberOfLines={1} style={styles.selectorName}>{activeProject?.name || 'Demo Project'}</Text></View>
+      <View style={{ flex: 1, marginLeft: 9 }}><Text style={styles.selectorCaption}>PROJECT</Text><Text numberOfLines={1} style={styles.selectorName}>{activeProject?.name || 'SenRa Production'}</Text></View>
       <Icon name="chevron-down" size={19} color={C.muted} />
     </Pressable>
     <SearchField value={query} onChangeText={setQuery} style={{ marginHorizontal: 16, marginTop: 12 }} />
     <View style={styles.listSummary}><Text style={styles.summaryText}>{filteredDevices.length} devices</Text><Text style={styles.summaryText}>Updated just now</Text></View>
     <ScrollView contentContainerStyle={styles.deviceList} keyboardShouldPersistTaps="handled">
-      {filteredDevices.length ? filteredDevices.map((device, index) => <DeviceCard key={device.apiId || device.id || index} device={device} onPress={() => goToDevice(device)} />) : <View style={styles.emptyBox}><Icon name="devices" size={28} color="#A4AAA5" /><Text style={styles.emptyText}>No devices match this search.</Text></View>}
+      {filteredDevices.length ? filteredDevices.map((device, index) => deviceView === 'compact' ? <DeviceCardCompact key={device.apiId || device.id || index} device={device} onPress={() => goToDevice(device)} /> : <DeviceCard key={device.apiId || device.id || index} device={device} onPress={() => goToDevice(device)} />) : <View style={styles.emptyBox}><Icon name="devices" size={28} color="#A4AAA5" /><Text style={styles.emptyText}>No devices match this search.</Text></View>}
       <Pressable onPress={() => { setPreviousRoute(route); setRoute('notifications'); }} style={styles.notificationsLink}><Icon name="bell-badge-outline" size={17} color={C.greenDark} /><Text style={styles.notificationsLinkText}>View notifications</Text><Icon name="chevron-right" size={18} color={C.muted} /></Pressable>
     </ScrollView>
   </View>;
@@ -704,8 +828,9 @@ function AppContent() {
     </View>
     <View style={styles.profileMenu}>
       <ProfileMenuRow icon="account-outline" title="My Profile" onPress={beginProfileEdit} />
-      <ProfileMenuRow icon="view-grid-outline" title="Project" value={activeProject?.name || 'Demo Project'} onPress={() => setModal('projects')} />
-      <ProfileMenuRow icon="domain" title="Organization" value={activeOrganisation?.name || profile.organization || 'SenRa IoT'} onPress={() => setModal('organisations')} last />
+      <ProfileMenuRow icon="view-grid-outline" title="Project" value={activeProject?.name || 'SenRa Production'} onPress={() => setModal('projects')} />
+      <ProfileMenuRow icon="domain" title="Organization" value={activeOrganisation?.name || profile.organization || 'SenRa IoT'} onPress={() => setModal('organisations')} />
+      <ProfileMenuRow icon="bell-outline" title="Notifications" onPress={() => { setPreviousRoute(route); setRoute('notifications'); }} last />
     </View>
     <Pressable accessibilityRole="button" onPress={() => Alert.alert(isConnected ? 'Log out?' : 'Leave preview?', isConnected ? 'Disconnect this app from your Ginjer account?' : 'Return to the connection screen?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Log out', style: 'destructive', onPress: isConnected ? disconnect : () => setRoute('login') }])} style={styles.logoutRow}>
       <Icon name="logout" size={20} color={C.red} /><Text style={styles.logoutText}>{isConnected ? 'Logout' : 'Connect to Ginjer'}</Text><Icon name="chevron-right" size={19} color={C.red} />
@@ -747,11 +872,77 @@ function AppContent() {
       <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
         {notices.map((notice, index) => <View key={`${notice.title}-${index}`}>
           {(index === 0 || (index === 4 && notices.length > 4)) ? <Text style={styles.noticeDate}>{index === 0 ? 'Today' : 'Earlier'}</Text> : null}
-          <View style={styles.noticeRow}><Image source={NOTICE_IMAGES[notice.icon]} style={styles.noticeImage} resizeMode="cover" /><View style={{ flex: 1 }}><Text style={styles.noticeTitle}>{notice.title}</Text><Text style={styles.noticeLocation}>{notice.where}</Text></View><View style={styles.noticeTime}>{notice.count ? <Text style={styles.unreadCount}>{notice.count}</Text> : null}<Text style={styles.noticeTimeText}>{notice.time}</Text></View></View>
+          <Pressable style={({ pressed }) => [styles.noticeRow, pressed && styles.pressed]} onPress={() => { const dev = devices.find(d => d.loc && notice.where && (d.loc.toLowerCase().includes(notice.where.toLowerCase()) || notice.where.toLowerCase().includes(d.name.toLowerCase()))); if (dev) goToDevice(dev, 'notifications'); else showToast('No linked device found for this alert.'); }}><Image source={NOTICE_IMAGES[notice.icon]} style={styles.noticeImage} resizeMode="cover" /><View style={{ flex: 1 }}><Text style={styles.noticeTitle}>{notice.title}</Text><Text style={styles.noticeLocation}>{notice.where}</Text></View><View style={styles.noticeTime}>{notice.count ? <Text style={styles.unreadCount}>{notice.count}</Text> : null}<Text style={styles.noticeTimeText}>{notice.time}</Text></View></Pressable>
         </View>)}
         {!notices.length ? <EmptyState text="No notifications match this filter." /> : null}
       </ScrollView>
     </View>;
+  };
+
+
+  const renderAutomation = () => {
+    const alertCount = devices.filter(d => d.chips?.some(c => c.status === 'red')).length;
+    return (
+      <ScrollView style={styles.screen} contentContainerStyle={styles.standardScroll}>
+        <Text style={[styles.sectionTitle, { marginBottom: 12 }]}>Automation</Text>
+        <View style={styles.autoSummaryRow}>
+          <View style={[styles.autoSummaryCard, { backgroundColor: '#EAF6FA' }]}>
+            <Icon name="devices" size={20} color={C.blue} />
+            <Text style={[styles.autoSummaryVal, { color: C.blue }]}>{devices.length}</Text>
+            <Text style={styles.autoSummaryLabel}>Devices</Text>
+          </View>
+          <View style={[styles.autoSummaryCard, { backgroundColor: C.redPale }]}>
+            <Icon name="alert-circle-outline" size={20} color={C.red} />
+            <Text style={[styles.autoSummaryVal, { color: C.red }]}>{alertCount}</Text>
+            <Text style={styles.autoSummaryLabel}>Alerts</Text>
+          </View>
+          <View style={[styles.autoSummaryCard, { backgroundColor: C.greenPale }]}>
+            <Icon name="robot-outline" size={20} color={C.greenDark} />
+            <Text style={[styles.autoSummaryVal, { color: C.greenDark }]}>{autoRules.filter(r => r.active).length}</Text>
+            <Text style={styles.autoSummaryLabel}>Active Rules</Text>
+          </View>
+        </View>
+
+        <Text style={styles.sectionTitleSmall}>Automation Rules</Text>
+        {autoRules.map(rule => (
+          <View key={rule.id} style={styles.autoRuleCard}>
+            <View style={[styles.autoRuleIcon, { backgroundColor: rule.color + '22' }]}>
+              <Icon name={rule.icon} size={19} color={rule.color} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text numberOfLines={1} style={styles.autoRuleName}>{rule.name}</Text>
+              <Text numberOfLines={1} style={styles.autoRuleMeta}>{rule.trigger} → {rule.action}</Text>
+            </View>
+            <Switch
+              value={rule.active}
+              onValueChange={(val) => setAutoRules(prev => prev.map(r => r.id === rule.id ? { ...r, active: val } : r))}
+              trackColor={{ false: '#D0D5CF', true: C.green }}
+              thumbColor={C.white}
+            />
+          </View>
+        ))}
+
+        <Text style={styles.sectionTitleSmall}>Scheduled Actions</Text>
+        {DEMO_SCHEDULES.map(sch => (
+          <View key={sch.id} style={styles.autoRuleCard}>
+            <View style={[styles.autoRuleIcon, { backgroundColor: sch.color + '22' }]}>
+              <Icon name={sch.icon} size={19} color={sch.color} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text numberOfLines={1} style={styles.autoRuleName}>{sch.name}</Text>
+              <Text numberOfLines={1} style={styles.autoRuleMeta}>{sch.time} · {sch.repeat}</Text>
+            </View>
+            <Icon name="chevron-right" size={18} color={C.muted} />
+          </View>
+        ))}
+
+        <Pressable style={styles.autoAnalyticsLink} onPress={() => setRoute('analytics')}>
+          <Icon name="chart-box-outline" size={18} color={C.greenDark} />
+          <Text style={styles.autoAnalyticsText}>View Analytics Dashboard</Text>
+          <Icon name="chevron-right" size={18} color={C.muted} />
+        </Pressable>
+      </ScrollView>
+    );
   };
 
   const renderEdit = () => <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -773,6 +964,7 @@ function AppContent() {
     if (route === 'locations') return renderLocations();
     if (route === 'map') return renderMap(true);
     if (route === 'analytics') return renderAnalytics();
+    if (route === 'automation') return renderAutomation();
     if (route === 'profile') return renderProfile();
     if (route === 'notifications') return renderNotifications();
     if (route === 'detail') return renderDetail();
@@ -806,26 +998,46 @@ function AppContent() {
       </Sheet>;
     }
     if (modal === 'downlink') {
-      const interfaces = modules.filter(module => module.moduleType === 'DOWNLINK_INTERFACE');
-      const send = async () => {
-        if (!isConnected || !client || !selectedDevice?.apiId) { showToast('Connect to Ginjer and select a live device before sending a downlink.'); setModal(null); return; }
-        let value;
-        try { value = JSON.parse(downlinkValue); if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Enter a JSON object.'); }
-        catch (error) { showToast(error.message); return; }
-        setLoading(true);
-        try {
-          const result = await client.sendDownlink(activeOrganisation, selectedDevice, downlinkModule, value);
-          setModal(null); showToast(result.sendDownlink?.message || 'Ginjer accepted the downlink request.');
-        } catch (error) { showToast(error.message); }
-        finally { setLoading(false); }
-      };
-      return <Sheet visible title="Send Downlink" subtitle={`Enter a JSON command for ${selectedDevice?.name || 'this device'}.`} onClose={() => setModal(null)} actions={<><ActionButton title="Cancel" secondary onPress={() => setModal(null)} /><ActionButton title={loading ? 'Sending…' : 'Send'} disabled={loading || !interfaces.length} onPress={send} /></>}>
-        <Text style={styles.fieldLabel}>Downlink interface</Text>
-        {interfaces.length ? interfaces.map(item => <OptionRow key={item._id} title={item.label || item._id} selected={downlinkModule === item._id} onPress={() => setDownlinkModule(item._id)} radio />) : <Text style={styles.sheetEmpty}>No downlink interface is available for this organization.</Text>}
-        <Text style={[styles.fieldLabel, { marginTop: 14 }]}>JSON value</Text>
-        <TextInput value={downlinkValue} onChangeText={setDownlinkValue} multiline autoCapitalize="none" autoCorrect={false} style={[styles.textInput, styles.jsonInput]} accessibilityLabel="JSON downlink value" />
-        {!isConnected ? <Text style={styles.footnote}>Connect to Ginjer to send a real device command.</Text> : null}
-      </Sheet>;
+      const pulseOpacity = sendAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] });
+      const pulseScale = sendAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1.08] });
+      return (
+        <Sheet visible title="Send Downlink" subtitle={`2-tap quick commands for ${selectedDevice?.name || 'this device'}`} onClose={() => { if (!downlinkSending) { setDownlinkSent(false); setModal(null); } }}>
+          {downlinkSent ? (
+            <View style={styles.downlinkSuccessBox}>
+              <Icon name="check-circle" size={48} color={C.green} />
+              <Text style={styles.downlinkSuccessText}>Command Dispatched!</Text>
+            </View>
+          ) : downlinkSending ? (
+            <View style={styles.downlinkSuccessBox}>
+              <Animated.View style={{ opacity: pulseOpacity, transform: [{ scale: pulseScale }] }}>
+                <Icon name="radio-tower" size={50} color={C.greenDark} />
+              </Animated.View>
+              <Text style={[styles.downlinkSuccessText, { color: C.muted }]}>Sending command…</Text>
+            </View>
+          ) : (
+            <>
+              <Text style={[styles.fieldLabel, { marginBottom: 8 }]}>Quick Presets (Tap to send)</Text>
+              <View style={styles.quickCmdGrid}>
+                {QUICK_COMMANDS.map(cmd => (
+                  <Pressable key={cmd.label} onPress={() => sendQuickDownlink(cmd)} style={({ pressed }) => [styles.quickCmdButton, pressed && styles.pressed, { borderColor: cmd.color + '55' }]}>
+                    <View style={[styles.quickCmdIcon, { backgroundColor: cmd.color + '18' }]}>
+                      <Icon name={cmd.icon} size={24} color={cmd.color} />
+                    </View>
+                    <Text style={[styles.quickCmdLabel, { color: cmd.color }]}>{cmd.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={[styles.sectionTitleSmall, { marginTop: 14 }]}>Advanced (Raw JSON)</Text>
+              <TextInput value={downlinkValue} onChangeText={setDownlinkValue} multiline autoCapitalize="none" autoCorrect={false} style={[styles.textInput, styles.jsonInput, { marginBottom: 8 }]} accessibilityLabel="JSON downlink value" />
+              
+              <View style={styles.sheetActions}>
+                <ActionButton title="Cancel" secondary onPress={() => setModal(null)} />
+                <ActionButton title="Send JSON" onPress={() => { let v; try { v = JSON.parse(downlinkValue); } catch { showToast('Invalid JSON.'); return; } sendQuickDownlink({ label: 'JSON', icon: 'code-json', value: v, color: C.blue }); }} />
+              </View>
+            </>
+          )}
+        </Sheet>
+      );
     }
     return null;
   };
@@ -835,6 +1047,18 @@ function AppContent() {
 
   return <SafeAreaView edges={hasTabs ? ['top'] : ['top', 'bottom']} style={styles.safeArea}>
     <StatusBar barStyle="dark-content" backgroundColor={route === 'locations' || route === 'map' ? '#F8FAF5' : C.canvas} />
+    {bannerNotice && hasTabs ? (
+      <Pressable style={[styles.banner, { backgroundColor: bannerNotice.color === 'red' ? C.red : C.amber }]} onPress={() => { setBannerNotice(null); const dev = devices.find(d => d.loc && (d.loc.toLowerCase().includes((bannerNotice.where || '').toLowerCase()) || (bannerNotice.where || '').toLowerCase().includes(d.name.toLowerCase()))); if (dev) goToDevice(dev, tab); }}>
+        <Icon name="alert-circle-outline" size={20} color={C.white} />
+        <View style={{ flex: 1, marginLeft: 8 }}>
+          <Text style={styles.bannerTitle} numberOfLines={1}>{bannerNotice.title}</Text>
+          <Text style={styles.bannerSub} numberOfLines={1}>{bannerNotice.where} · Tap to route to device</Text>
+        </View>
+        <Pressable onPress={() => setBannerNotice(null)} hitSlop={12} style={styles.bannerClose}>
+          <Icon name="close" size={17} color={C.white} />
+        </Pressable>
+      </Pressable>
+    ) : null}
     <View style={styles.appBody}>{renderBody()}</View>
     {hasTabs ? <BottomTabs current={tab} onChange={changeTab} /> : null}
     {toast ? <View pointerEvents="none" style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
@@ -866,13 +1090,13 @@ const styles = StyleSheet.create({
   centerPage: { flex: 1, justifyContent: 'center', padding: 22 }, setupPanel: { width: '100%', maxWidth: 440, alignSelf: 'center', padding: 22, borderRadius: 20, backgroundColor: C.white, elevation: 3, shadowColor: '#15220E', shadowOpacity: 0.08, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
   kicker: { color: C.green, fontSize: 12, fontWeight: '800', letterSpacing: 1.2, marginBottom: 11 }, screenHeading: { color: C.ink, fontSize: 24, fontWeight: '700', marginBottom: 9 }, bodyCopy: { color: '#6F7771', fontSize: 14, lineHeight: 21, marginBottom: 18 },
   textInput: { width: '100%', minHeight: 51, paddingHorizontal: 13, paddingVertical: 11, borderWidth: 1.2, borderColor: '#C9CDC9', borderRadius: 11, backgroundColor: C.white, color: C.ink, fontSize: 15 }, errorText: { color: C.red, fontSize: 13, lineHeight: 19, marginTop: 9 },
-  primaryButton: { minHeight: 51, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center', borderRadius: 12, backgroundColor: C.green }, primaryButtonText: { color: C.white, fontSize: 16, fontWeight: '700' }, secondaryButton: { minHeight: 45, paddingHorizontal: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#DEE6D3', borderRadius: 11, backgroundColor: C.white }, secondaryButtonText: { color: C.greenDark, fontSize: 14, fontWeight: '600' }, disabledButton: { backgroundColor: '#E9EEE3', borderColor: '#E9EEE3' }, pressed: { opacity: 0.75, transform: [{ scale: 0.99 }] }, footnote: { color: '#969D97', fontSize: 12, lineHeight: 18, marginTop: 12 },
+  primaryButton: { minHeight: 50, paddingHorizontal: 18, justifyContent: 'center', alignItems: 'center', borderRadius: 14, backgroundColor: C.green, elevation: 2, shadowColor: '#5F8523', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } }, primaryButtonText: { color: C.white, fontSize: 15, fontWeight: '700', letterSpacing: 0.2 }, secondaryButton: { minHeight: 46, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: '#DCE4D6', borderRadius: 14, backgroundColor: C.white }, secondaryButtonText: { color: C.greenDark, fontSize: 14, fontWeight: '600' }, disabledButton: { backgroundColor: '#E9EEE3', borderColor: '#E9EEE3' }, pressed: { opacity: 0.75, transform: [{ scale: 0.99 }] }, footnote: { color: '#969D97', fontSize: 12, lineHeight: 18, marginTop: 12 },
   loginScroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 12, paddingBottom: 22, backgroundColor: C.white }, loginBrand: { height: 76, alignItems: 'center', justifyContent: 'center' }, ginjerLogo: { width: 235, height: 68 }, loginTagline: { marginTop: 5, color: '#969D98', fontSize: 16, textAlign: 'center' }, loginIllustration: { width: '100%', height: 190, marginTop: 14, marginBottom: 14 }, authTabs: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 11, backgroundColor: '#F2F4EF', marginBottom: 14 }, authTab: { minHeight: 38, flex: 1, justifyContent: 'center', alignItems: 'center', borderRadius: 8 }, authTabActive: { backgroundColor: C.white, elevation: 1, shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } }, authTabText: { color: C.muted, fontSize: 12, fontWeight: '500' }, authTabTextActive: { color: C.greenDark, fontWeight: '700' }, fieldLabel: { color: C.greenDark, fontSize: 13, fontWeight: '600', marginBottom: 7 }, textLink: { alignSelf: 'center', marginTop: 12, padding: 6 }, linkText: { color: C.greenDark, fontSize: 14, fontWeight: '600' }, legalText: { color: '#969D98', textAlign: 'center', fontSize: 11, lineHeight: 17, marginTop: 16 }, legalLinkText: { color: C.greenDark, fontSize: 11, fontWeight: '600' }, mutedLink: { color: '#929A94', fontSize: 12 }, changeServer: { alignSelf: 'center', marginTop: 7, padding: 5 },
   listTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 17, paddingTop: 10, paddingBottom: 5 }, sectionTitle: { color: C.ink, fontSize: 19, lineHeight: 26, fontWeight: '700' }, topActions: { flexDirection: 'row', gap: 2 }, iconButton: { minWidth: 38, minHeight: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 10 }, pageHeader: { height: 52, zIndex: 4, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, backgroundColor: '#FFFFFFF2' }, pageTitle: { flex: 1, textAlign: 'center', color: C.ink, fontSize: 16, fontWeight: '700' }, pageRight: { minWidth: 38, alignItems: 'flex-end' },
-  projectSelector: { minHeight: 52, marginHorizontal: 16, marginTop: 7, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: C.line, borderRadius: 12, backgroundColor: C.white, shadowColor: '#293221', shadowOpacity: 0.035, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 1 }, selectorCaption: { color: '#A1A7A2', fontSize: 9, lineHeight: 12, fontWeight: '700', letterSpacing: 0.7 }, selectorName: { color: C.ink, fontSize: 13, fontWeight: '600', marginTop: 2 },
-  searchField: { minHeight: 45, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#EEF0EC', borderRadius: 12, backgroundColor: C.white, shadowColor: '#293221', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 }, searchInput: { flex: 1, minWidth: 0, height: 44, padding: 0, color: C.ink, fontSize: 13 },
-  listSummary: { paddingHorizontal: 18, paddingTop: 13, paddingBottom: 7, flexDirection: 'row', justifyContent: 'space-between' }, summaryText: { color: '#929A94', fontSize: 10, fontWeight: '500' }, deviceList: { gap: 10, paddingHorizontal: 14, paddingTop: 4, paddingBottom: 16 }, deviceCard: { minHeight: 114, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, borderRadius: 14, backgroundColor: C.white, elevation: 2, shadowColor: '#1F2C19', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }, deviceThumb: { alignItems: 'center', justifyContent: 'center', borderRadius: 11, backgroundColor: '#F4F7F1' }, deviceCardBody: { flex: 1, minWidth: 0, alignSelf: 'stretch', justifyContent: 'center' }, deviceName: { color: C.ink, fontSize: 13, fontWeight: '700' }, deviceId: { color: '#929A94', fontSize: 9, marginTop: 2 }, deviceLocation: { color: '#7C857E', fontSize: 10, marginTop: 4 }, chipRow: { flexDirection: 'row', gap: 5, marginTop: 7 }, statusChip: { maxWidth: 100, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 6 }, statusChipText: { fontSize: 9, fontWeight: '600' }, deviceCardMeta: { width: 63, alignItems: 'flex-end', alignSelf: 'stretch', justifyContent: 'center' }, onlineDot: { width: 8, height: 8, borderRadius: 5, marginBottom: 4 }, lastLabel: { color: '#A1A7A2', fontSize: 8 }, lastTime: { maxWidth: '100%', marginTop: 2, color: '#626B64', fontSize: 8, lineHeight: 11, textAlign: 'right' },
-  tabSafeArea: { backgroundColor: C.white }, bottomTabs: { minHeight: 60, paddingTop: 3, paddingBottom: Platform.OS === 'android' ? 4 : 2, flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E9ECE7', backgroundColor: C.white }, tabButton: { flex: 1, height: 54, alignItems: 'center', justifyContent: 'center', gap: 2 }, tabLabel: { color: '#999F9A', fontSize: 9, lineHeight: 12, fontWeight: '500' }, tabLabelActive: { color: C.greenDark, fontWeight: '700' }, notificationsLink: { minHeight: 44, marginTop: 5, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: '#F1F6E9' }, notificationsLinkText: { flex: 1, color: C.greenDark, fontSize: 12, fontWeight: '600' },
+  projectSelector: { minHeight: 56, marginHorizontal: 16, marginTop: 8, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E5E9E4', borderRadius: 14, backgroundColor: C.white, shadowColor: '#1A211D', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 }, selectorCaption: { color: '#A1A7A2', fontSize: 9, lineHeight: 12, fontWeight: '700', letterSpacing: 0.7 }, selectorName: { color: C.ink, fontSize: 13, fontWeight: '600', marginTop: 2 },
+  searchField: { minHeight: 46, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderColor: '#E3E7E1', borderRadius: 14, backgroundColor: C.white, shadowColor: '#1A211D', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1 }, searchInput: { flex: 1, minWidth: 0, height: 44, padding: 0, color: C.ink, fontSize: 13 },
+  listSummary: { paddingHorizontal: 18, paddingTop: 13, paddingBottom: 7, flexDirection: 'row', justifyContent: 'space-between' }, summaryText: { color: '#929A94', fontSize: 10, fontWeight: '500' }, deviceList: { gap: 10, paddingHorizontal: 14, paddingTop: 4, paddingBottom: 16 }, deviceCard: { minHeight: 114, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, borderRadius: 16, backgroundColor: C.white, borderWidth: 1, borderColor: '#EDF0EB', elevation: 2, shadowColor: '#1A211D', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }, deviceThumb: { alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: '#F3F6ED', borderWidth: 1, borderColor: '#E8EFE0' }, deviceCardBody: { flex: 1, minWidth: 0, alignSelf: 'stretch', justifyContent: 'center' }, deviceName: { color: C.ink, fontSize: 13, fontWeight: '700' }, deviceId: { color: '#929A94', fontSize: 9, marginTop: 2 }, deviceLocation: { color: '#7C857E', fontSize: 10, marginTop: 4 }, chipRow: { flexDirection: 'row', gap: 5, marginTop: 7 }, statusChip: { maxWidth: 100, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 6 }, statusChipText: { fontSize: 9, fontWeight: '600' }, deviceCardMeta: { width: 63, alignItems: 'flex-end', alignSelf: 'stretch', justifyContent: 'center' }, onlineDot: { width: 8, height: 8, borderRadius: 5, marginBottom: 4 }, lastLabel: { color: '#A1A7A2', fontSize: 8 }, lastTime: { maxWidth: '100%', marginTop: 2, color: '#626B64', fontSize: 8, lineHeight: 11, textAlign: 'right' },
+  tabSafeArea: { backgroundColor: C.white }, bottomTabs: { minHeight: 64, paddingTop: 6, paddingBottom: Platform.OS === 'android' ? 8 : 4, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#EEF1EC', backgroundColor: C.white, shadowColor: '#000000', shadowOpacity: 0.03, shadowRadius: 10, shadowOffset: { width: 0, height: -3 }, elevation: 8 }, tabButton: { flex: 1, height: 54, alignItems: 'center', justifyContent: 'center', gap: 2 }, tabLabel: { color: '#999F9A', fontSize: 9, lineHeight: 12, fontWeight: '500' }, tabLabelActive: { color: C.greenDark, fontWeight: '700' }, notificationsLink: { minHeight: 44, marginTop: 5, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: '#F1F6E9' }, notificationsLinkText: { flex: 1, color: C.greenDark, fontSize: 12, fontWeight: '600' },
   emptyBox: { minHeight: 170, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 18 }, emptyInline: { minHeight: 56, justifyContent: 'center' }, emptyText: { color: '#929A94', fontSize: 13, textAlign: 'center' },
   mapScreen: { flex: 1, backgroundColor: '#FFFFFF' }, mapHeader: { height: 48, zIndex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 16, paddingRight: 8, backgroundColor: '#FFFFFFF0' }, mapOverlay: { position: 'absolute', zIndex: 2, top: 58, left: 12, right: 12 }, mapSearch: { borderColor: '#E5EAE2' }, mapNotice: { position: 'absolute', zIndex: 1, top: 120, left: 12, right: 12, padding: 8, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: '#FFFFFFEE' }, mapNoticeText: { flex: 1, color: '#6E786F', fontSize: 9, lineHeight: 13 }, mapCount: { position: 'absolute', bottom: 12, left: 12, paddingHorizontal: 10, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, backgroundColor: '#FFFFFFF2', elevation: 2 }, mapCountText: { color: '#6F7970', fontSize: 10 }, currentLocationMarker: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, borderRadius: 12, backgroundColor: '#D94343', elevation: 5, shadowColor: '#641717', shadowOpacity: 0.25, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } }, currentLocationMarkerCenter: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.white }, markerBubble: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, borderRadius: 19, borderBottomLeftRadius: 5, elevation: 4 }, mapDeviceCard: { position: 'absolute', bottom: 12, left: 12, right: 12, minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 9, padding: 10, borderRadius: 13, backgroundColor: C.white, elevation: 5, shadowColor: '#162015', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }, mapDeviceName: { color: C.ink, fontSize: 13, fontWeight: '700' }, mapDeviceMeta: { color: C.muted, fontSize: 10, marginTop: 3 },
   standardScroll: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 22 }, dashboardHeading: { marginTop: 5, marginBottom: 8, color: C.ink, fontSize: 19, fontWeight: '700' }, infoNote: { marginTop: 11, padding: 10, flexDirection: 'row', gap: 7, alignItems: 'center', borderWidth: 1, borderColor: '#E7EDDE', borderRadius: 10, backgroundColor: '#F4F8EE' }, infoNoteText: { flex: 1, color: '#6F7A6E', fontSize: 10, lineHeight: 15 }, statsRow: { flexDirection: 'row', gap: 10, marginTop: 12 }, statCard: { flex: 1, minHeight: 102, padding: 11, borderRadius: 12, backgroundColor: C.white, elevation: 1 }, statIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 9 }, statValue: { marginTop: 8, color: C.ink, fontSize: 19, fontWeight: '700' }, statLabel: { marginTop: 1, color: C.muted, fontSize: 10 }, sectionTitleSmall: { color: C.ink, fontSize: 13, fontWeight: '700', marginTop: 16, marginBottom: 8 }, metricCard: { marginTop: 10, padding: 13, borderRadius: 13, backgroundColor: C.white, elevation: 2, shadowColor: '#192512', shadowOpacity: 0.04, shadowRadius: 7, shadowOffset: { width: 0, height: 2 } }, metricHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }, metricName: { color: C.ink, fontSize: 12, fontWeight: '700' }, metricCaption: { color: '#999F9A', fontSize: 9, marginTop: 2 }, metricValue: { marginTop: 12, color: C.greenDark, fontSize: 25, fontWeight: '700', textAlign: 'center' }, metricFooter: { minHeight: 27, marginTop: 10, paddingTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line }, metricFooterText: { color: '#9CA39D', fontSize: 9 }, gauge: { height: 106, alignItems: 'center', justifyContent: 'flex-end', overflow: 'hidden' }, gaugeArc: { position: 'absolute', bottom: 0, width: 160, height: 80, borderWidth: 12, borderBottomWidth: 0, borderColor: '#C8E0E8', borderTopLeftRadius: 100, borderTopRightRadius: 100 }, gaugeNeedle: { position: 'absolute', left: 70, top: 46, width: 45, height: 2, backgroundColor: C.blue, transform: [{ rotate: '-37deg' }] }, gaugeValue: { marginBottom: 7, color: '#347F9B', fontSize: 22, fontWeight: '700' }, gaugeUnit: { fontSize: 13, fontWeight: '500' },
@@ -883,5 +1107,28 @@ const styles = StyleSheet.create({
   noticeDate: { marginHorizontal: 16, marginTop: 14, marginBottom: 7, color: '#8B938D', fontSize: 10, fontWeight: '700' }, noticeRow: { minHeight: 69, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E8ECE7', backgroundColor: C.white }, noticeImage: { width: 38, height: 38, borderRadius: 20 }, noticeTitle: { color: C.ink, fontSize: 11, fontWeight: '700' }, noticeLocation: { color: '#969D98', fontSize: 9, marginTop: 3 }, noticeTime: { alignItems: 'flex-end', gap: 4 }, noticeTimeText: { color: '#9AA19B', fontSize: 9 }, unreadCount: { minWidth: 17, height: 17, paddingHorizontal: 4, overflow: 'hidden', borderRadius: 9, backgroundColor: C.green, color: C.white, fontSize: 9, textAlign: 'center', textAlignVertical: 'center' },
   modalScrim: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#10171299' }, sheet: { maxHeight: '84%', paddingTop: 8, paddingHorizontal: 18, paddingBottom: Platform.OS === 'ios' ? 25 : 14, borderTopLeftRadius: 20, borderTopRightRadius: 20, backgroundColor: C.white }, sheetGrabber: { width: 36, height: 4, alignSelf: 'center', marginBottom: 13, borderRadius: 4, backgroundColor: '#D9DED8' }, sheetTitle: { color: C.ink, fontSize: 17, fontWeight: '700', textAlign: 'center' }, sheetSubtitle: { alignSelf: 'center', maxWidth: 300, marginTop: 5, marginBottom: 12, color: '#969D98', fontSize: 11, lineHeight: 16, textAlign: 'center' }, sheetContent: { flexShrink: 1 }, sheetActions: { flexDirection: 'row', gap: 9, marginTop: 12 }, optionRow: { minHeight: 49, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EEF0EC' }, optionTitle: { color: C.ink, fontSize: 12, fontWeight: '500' }, optionSubtitle: { color: C.muted, fontSize: 10, marginTop: 3 }, sheetEmpty: { padding: 15, color: C.muted, fontSize: 12, textAlign: 'center' }, jsonInput: { minHeight: 96, marginTop: 6, textAlignVertical: 'top', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 12 },
   toast: { position: 'absolute', left: 20, right: 20, bottom: 74, zIndex: 20, minHeight: 38, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: '#26312B', elevation: 5 }, toastText: { color: C.white, fontSize: 11, textAlign: 'center' }, loadingOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8F9F7AA' },
+
+  banner: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, zIndex: 30 },
+  bannerTitle: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+  bannerSub: { color: '#FFFFFFCC', fontSize: 11, marginTop: 1 },
+  bannerClose: { padding: 4, marginLeft: 6 },
+  quickCmdGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 },
+  quickCmdButton: { width: '30%', flexGrow: 1, minWidth: '28%', minHeight: 76, alignItems: 'center', justifyContent: 'center', gap: 6, padding: 8, borderRadius: 12, borderWidth: 1.5, backgroundColor: C.white },
+  quickCmdIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  quickCmdLabel: { fontSize: 10, fontWeight: '700', textAlign: 'center' },
+  downlinkSuccessBox: { minHeight: 140, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  downlinkSuccessText: { fontSize: 16, fontWeight: '700', color: C.green },
+  autoSummaryRow: { flexDirection: 'row', gap: 9, marginBottom: 6 },
+  autoSummaryCard: { flex: 1, minHeight: 78, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 12, padding: 10 },
+  autoSummaryVal: { fontSize: 20, fontWeight: '800' },
+  autoSummaryLabel: { fontSize: 10, color: C.muted, fontWeight: '600' },
+  autoRuleCard: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, marginBottom: 8, borderRadius: 12, backgroundColor: C.white, elevation: 1, shadowColor: '#192512', shadowOpacity: 0.04, shadowRadius: 5, shadowOffset: { width: 0, height: 1 } },
+  autoRuleIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  autoRuleName: { color: C.ink, fontSize: 13, fontWeight: '700' },
+  autoRuleMeta: { color: C.muted, fontSize: 11, marginTop: 2 },
+  autoAnalyticsLink: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 12, padding: 13, borderRadius: 12, backgroundColor: C.greenPale, borderWidth: 1, borderColor: '#D6E8B7' },
+  autoAnalyticsText: { flex: 1, color: C.greenDark, fontSize: 13, fontWeight: '600' },
+  deviceCardCompact: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: C.white, elevation: 1 },
+  compactDot: { width: 8, height: 8, borderRadius: 4 },
 });
 
