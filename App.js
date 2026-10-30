@@ -65,7 +65,7 @@ const GOOGLE_MAPS_LIGHT_STYLE = [
   { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#688d9e' }] },
 ];
 
-const DEMO_PROFILE = { name: 'Shaheen Ansari', email: 'shaheenansari2519cs@gmail.com' };
+const DEMO_PROFILE = { name: 'Shaheen Ansari', email: 'shaheenansari2519cs@gmail.com', primaryPhone: '', secondaryPhone: '', organization: 'SenRa IoT' };
 const POPULAR_PLACES = {
   delhi: { latitude: 28.6139, longitude: 77.2090, name: 'Delhi, India' },
   'new delhi': { latitude: 28.6139, longitude: 77.2090, name: 'New Delhi, India' },
@@ -92,21 +92,16 @@ function IconButton({ name, onPress, label, style, color = C.muted, size = 21 })
   return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={8} style={[styles.iconButton, style]}><Icon name={name} size={size} color={color} /></Pressable>;
 }
 
-function ProfileAvatar({ uri, onEditPress, onDeletePress, size = 82, style }) {
+function ProfileAvatar({ uri, onEditPress, size = 82, style }) {
   const radius = size / 2;
   return (
     <View style={[styles.avatarWrap, { width: size, height: size }, style]}>
       <View style={[styles.avatar, { width: size, height: size, borderRadius: radius }]}>
         {uri ? <Image source={{ uri }} resizeMode="cover" style={styles.avatarImage} /> : <Icon name="account-outline" size={Math.round(size * 0.42)} color={C.greenDark} />}
       </View>
-      <Pressable accessibilityRole="button" accessibilityLabel="Edit profile photo" onPress={onEditPress} hitSlop={12} style={styles.editPhotoButton}>
-        <Icon name="camera-outline" size={15} color={C.white} />
-      </Pressable>
-      {uri && onDeletePress ? (
-        <Pressable accessibilityRole="button" accessibilityLabel="Delete profile photo" onPress={onDeletePress} hitSlop={12} style={styles.deletePhotoButton}>
-          <Icon name="trash-can-outline" size={15} color={C.white} />
-        </Pressable>
-      ) : null}
+      {onEditPress ? <Pressable accessibilityRole="button" accessibilityLabel="Edit profile photo" onPress={onEditPress} hitSlop={12} style={styles.editPhotoButton}>
+        <Icon name="pencil" size={15} color={C.white} />
+      </Pressable> : null}
     </View>
   );
 }
@@ -120,6 +115,17 @@ function ProfileMenuRow({ icon, title, value, onPress, last = false }) {
     </View>
     <Icon name="chevron-right" size={19} color="#A8ADA9" />
   </Pressable>;
+}
+
+function ProfileField({ label, value, onChangeText, icon, keyboardType, autoCapitalize, onPress, editable = true }) {
+  return <View style={styles.profileFieldGroup}>
+    <Text style={styles.profileFieldLabel}>{label}</Text>
+    <Pressable disabled={!onPress} onPress={onPress} style={styles.profileField}>
+      <Icon name={icon} size={20} color={C.greenDark} />
+      <TextInput value={value} onChangeText={onChangeText} editable={editable} keyboardType={keyboardType} autoCapitalize={autoCapitalize} autoCorrect={false} style={styles.profileFieldInput} placeholder={label} placeholderTextColor="#9EA39F" accessibilityLabel={label} />
+      {onPress ? <Icon name="chevron-down" size={19} color={C.muted} /> : null}
+    </Pressable>
+  </View>;
 }
 
 function ScreenHeader({ title, onBack, right }) {
@@ -176,7 +182,7 @@ function DeviceCard({ device, onPress }) {
 
 function BottomTabs({ current, onChange }) {
   const items = [
-    ['devices', 'Devices', 'view-dashboard-outline'], ['locations', 'Locations', 'map-marker-radius-outline'],
+    ['devices', 'Devices', 'view-dashboard-outline'], ['locations', 'Locations', 'map-outline'],
     ['analytics', 'Analytics', 'chart-box-outline'], ['profile', 'Profile', 'account-outline'],
   ];
   return <SafeAreaView edges={['bottom']} style={styles.tabSafeArea}>
@@ -240,7 +246,9 @@ function AppContent() {
   const [activeOrganisation, setActiveOrganisation] = useState(null);
   const [activeProject, setActiveProject] = useState(null);
   const [profile, setProfile] = useState(DEMO_PROFILE);
+  const [profileDraft, setProfileDraft] = useState(DEMO_PROFILE);
   const [profilePhotoUri, setProfilePhotoUri] = useState(null);
+  const [profilePhotoDraftUri, setProfilePhotoDraftUri] = useState(null);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [locating, setLocating] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState(demoDevices[1]);
@@ -253,6 +261,7 @@ function AppContent() {
   const [toast, setToast] = useState('');
   const [downlinkValue, setDownlinkValue] = useState('{}');
   const [downlinkModule, setDownlinkModule] = useState('');
+  const [organizationQuery, setOrganizationQuery] = useState('');
   const mapRef = useRef(null);
   const client = useMemo(() => serverUrl ? new GinjerClient(serverUrl) : null, [serverUrl]);
   const isConnected = connectedToBackend && !demoMode;
@@ -292,24 +301,6 @@ function AppContent() {
       setLocating(false);
     }
   }, [locating, showToast]);
-
-  const removeProfilePhoto = useCallback(() => {
-    Alert.alert(
-      'Delete Photo',
-      'Are you sure you want to delete your profile photo?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            setProfilePhotoUri(null);
-            showToast('Profile photo deleted.');
-          },
-        },
-      ]
-    );
-  }, [showToast]);
 
   const handleMapPress = useCallback(async e => {
     const coordinate = e.nativeEvent?.coordinate;
@@ -383,8 +374,8 @@ function AppContent() {
         quality: 0.8,
       });
       if (result.canceled || !result.assets?.[0]?.uri) return;
-      setProfilePhotoUri(result.assets[0].uri);
-      showToast('Profile photo updated.');
+      setProfilePhotoDraftUri(result.assets[0].uri);
+      showToast('Photo selected. Save your profile to apply it.');
     } catch {
       showToast('Could not open the photo library. Please try again.');
     }
@@ -397,6 +388,19 @@ function AppContent() {
   const goToDevice = useCallback((device, from = route) => {
     setPreviousRoute(from); setSelectedDevice(device); setExpanded(false); setRoute('detail');
   }, [route]);
+
+  const beginProfileEdit = () => {
+    setProfileDraft({ ...profile, organization: activeOrganisation?.name || profile.organization || 'SenRa IoT' });
+    setProfilePhotoDraftUri(profilePhotoUri);
+    setRoute('edit');
+  };
+
+  const saveProfile = () => {
+    setProfile(profileDraft);
+    setProfilePhotoUri(profilePhotoDraftUri);
+    setRoute('profile');
+    showToast(isConnected ? 'Profile saved for this session. Ginjer does not provide a profile update API.' : 'Profile saved for this preview session.');
+  };
 
   const back = useCallback(() => {
     if (modal) { setModal(null); return true; }
@@ -492,14 +496,14 @@ function AppContent() {
         const user = data.signIn;
         if (!user?.token) throw new Error('Sign-in returned no token. Check your Ginjer credentials.');
         authToken = user.token;
-        setProfile({ name: [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Ginjer User', email: user.emailId || email });
+        setProfile(current => ({ ...current, name: [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Ginjer User', email: user.emailId || email }));
         const defaultId = (typeof user.defaultAccount === 'string' ? user.defaultAccount : user.defaultAccount?.organisationId) || user.organisationId;
         await client.saveToken(authToken);
         await loadAccountData(client, defaultId);
       } else {
         if (!authToken) throw new Error('Paste the token value from your Postman environment.');
         await client.saveToken(authToken);
-        setProfile({ name: 'Ginjer user', email: 'Connected with API token' });
+        setProfile(current => ({ ...current, name: current.name || 'Ginjer user', email: current.email || 'Connected with API token' }));
         await loadAccountData(client);
       }
     } catch (error) {
@@ -512,7 +516,7 @@ function AppContent() {
     await client?.clearToken();
     setDemoMode(true); setDevices(demoDevices); setSelectedDevice(demoDevices[1]);
     setOrganisations([]); setProjects([]); setModules([]); setActiveOrganisation(null); setActiveProject(null);
-    setProfile(DEMO_PROFILE); setProfilePhotoUri(null); setRoute('login'); setTab('devices'); setModal(null); showToast('Signed out.');
+    setProfile(DEMO_PROFILE); setProfileDraft(DEMO_PROFILE); setProfilePhotoUri(null); setProfilePhotoDraftUri(null); setRoute('login'); setTab('devices'); setModal(null); showToast('Signed out.');
   };
 
   const refresh = async () => {
@@ -649,7 +653,7 @@ function AppContent() {
           <View style={styles.currentLocationMarker}><View style={styles.currentLocationMarkerCenter} /></View>
         </Marker> : null}
       </MapView>
-      {full ? <ScreenHeader title="Device Map" onBack={onDetailBack} /> : <View style={styles.mapHeader}><Text style={styles.sectionTitle}>Locations</Text><IconButton name="crosshairs-gps" label="Show my current location" color={locating ? C.green : C.greenDark} onPress={showCurrentLocation} /></View>}
+      {full ? <ScreenHeader title="Device Map" onBack={onDetailBack} /> : <View style={styles.mapHeader}><Text style={styles.sectionTitle}>Locations</Text><View style={{ flexDirection: 'row' }}><IconButton name="bell-outline" label="Notifications" color={C.ink} onPress={() => { setPreviousRoute(route); setRoute('notifications'); }} /><IconButton name="crosshairs-gps" label="Show my current location" color={locating ? C.green : C.greenDark} onPress={showCurrentLocation} /></View></View>}
       {full ? <View style={[styles.mapOverlay, { top: 56 }]}>{mapSearch}</View> : <View style={styles.mapOverlay}>{mapSearch}</View>}
       {visibleMarkers.length === 0 ? <View style={styles.mapNotice}><Icon name="map-marker-off-outline" size={17} color={C.greenDark} /><Text style={styles.mapNoticeText}>Tap anywhere on the map or search a city to select a location.</Text></View> : isFallbackDemo ? <View style={styles.mapNotice}><Icon name="information-outline" size={17} color={C.greenDark} /><Text style={styles.mapNoticeText}>Sample placeholders only — these are not live devices or confirmed locations.</Text></View> : null}
       <View style={styles.mapCount}><Icon name="map-marker-multiple-outline" color={C.greenDark} size={15} /><Text style={styles.mapCountText}>{isFallbackDemo ? `${visibleMarkers.length} sample placeholders` : `${visibleMarkers.length} of ${devices.length} devices with coordinates`}</Text></View>
@@ -670,7 +674,8 @@ function AppContent() {
   const renderAnalytics = () => {
     const liveOutputs = isConnected ? devices.flatMap(device => device.outputs.map((output, index) => ({ device, output, index }))) : [];
     return <ScrollView style={styles.screen} contentContainerStyle={styles.standardScroll}>
-      <Pressable style={styles.projectSelector} onPress={() => setModal('projects')}><Icon name="chart-box-outline" size={19} color={C.greenDark} /><View style={{ flex: 1, marginLeft: 9 }}><Text style={styles.selectorCaption}>DASHBOARD</Text><Text style={styles.selectorName}>{activeProject?.name || 'Device health'}</Text></View><Icon name="chevron-down" size={19} color={C.muted} /></Pressable>
+      <Text style={styles.dashboardHeading}>Dashboard</Text>
+      <Pressable style={styles.projectSelector} onPress={() => setModal('projects')}><Icon name="chart-box-outline" size={19} color={C.greenDark} /><View style={{ flex: 1, marginLeft: 9 }}><Text style={styles.selectorCaption}>PUBLIC DASHBOARD</Text><Text numberOfLines={1} style={styles.selectorName}>{activeProject?.name || 'Device health'}</Text></View><Icon name="chevron-down" size={19} color={C.muted} /></Pressable>
       {isConnected ? <View style={styles.infoNote}><Icon name="information-outline" size={16} color={C.greenDark} /><Text style={styles.infoNoteText}>These are current device outputs. Historical analytics are not included in the Ginjer API collection.</Text></View> : <View style={styles.infoNote}><Icon name="flask-outline" size={16} color={C.greenDark} /><Text style={styles.infoNoteText}>Preview metrics are sample data. Connect to Ginjer to see current outputs.</Text></View>}
       <View style={styles.statsRow}>
         <StatCard label="Devices" value={devices.length} icon="devices" tint={C.green} />
@@ -691,18 +696,21 @@ function AppContent() {
   const renderProfile = () => <ScrollView style={styles.screen} contentContainerStyle={styles.profileScroll}>
     <Text style={styles.profileHeading}>Profile</Text>
     <View style={styles.profileHero}>
-      <ProfileAvatar uri={profilePhotoUri} onEditPress={pickImage} onDeletePress={removeProfilePhoto} size={88} />
-      <Text style={styles.profileName}>{profile.name}</Text>
-      <Text style={styles.profileEmail}>{profile.email}</Text>
+      <ProfileAvatar uri={profilePhotoUri} size={78} />
+      <View style={styles.profileIdentity}>
+        <Text numberOfLines={2} style={styles.profileName}>{profile.name || 'Ginjer User'}</Text>
+        <Text numberOfLines={2} style={styles.profileEmail}>{profile.email || 'Email not available'}</Text>
+      </View>
     </View>
     <View style={styles.profileMenu}>
-      <ProfileMenuRow icon="account-outline" title="My Profile" onPress={() => setRoute('edit')} />
+      <ProfileMenuRow icon="account-outline" title="My Profile" onPress={beginProfileEdit} />
       <ProfileMenuRow icon="view-grid-outline" title="Project" value={activeProject?.name || 'Demo Project'} onPress={() => setModal('projects')} />
-      <ProfileMenuRow icon="domain" title="Organization" value={activeOrganisation?.name || 'SenRa IoT'} onPress={() => setModal('organisations')} />
-      <ProfileMenuRow icon="bell-outline" title="Notifications" onPress={() => { setPreviousRoute(route); setRoute('notifications'); }} last />
+      <ProfileMenuRow icon="domain" title="Organization" value={activeOrganisation?.name || profile.organization || 'SenRa IoT'} onPress={() => setModal('organisations')} last />
     </View>
-    {isConnected ? <ActionButton title="Disconnect from Ginjer" secondary onPress={disconnect} style={{ marginTop: 14 }} /> : <ActionButton title="Connect to Ginjer" onPress={() => setRoute('login')} style={{ marginTop: 14 }} />}
-    <Text style={styles.profileFootnote}>Alumhacks Mobile · Expo Go preview</Text>
+    <Pressable accessibilityRole="button" onPress={() => Alert.alert(isConnected ? 'Log out?' : 'Leave preview?', isConnected ? 'Disconnect this app from your Ginjer account?' : 'Return to the connection screen?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Log out', style: 'destructive', onPress: isConnected ? disconnect : () => setRoute('login') }])} style={styles.logoutRow}>
+      <Icon name="logout" size={20} color={C.red} /><Text style={styles.logoutText}>{isConnected ? 'Logout' : 'Connect to Ginjer'}</Text><Icon name="chevron-right" size={19} color={C.red} />
+    </Pressable>
+    <Text style={styles.profileFootnote}>Alumhacks Mobile · {isConnected ? 'Ginjer connected' : 'Demo preview'}</Text>
   </ScrollView>;
 
   const renderDetail = () => {
@@ -733,7 +741,7 @@ function AppContent() {
     const notices = demoNotices.filter((notice, index) => noticeFilter === 'all' || (noticeFilter === 'unread' && notice.count) || (noticeFilter === 'critical' && notice.color === 'red'))
       .filter(notice => !query || `${notice.title} ${notice.where}`.toLowerCase().includes(query.toLowerCase()));
     return <View style={styles.screen}>
-      <ScreenHeader title="Notifications" onBack={onDetailBack} right={<IconButton name="filter-variant" label="Filter notifications" onPress={() => setModal('notice-filter')} />} />
+      <ScreenHeader title="Notifications" onBack={onDetailBack} right={<View style={{ flexDirection: 'row' }}><IconButton name="filter-variant" label="Filter notifications" onPress={() => setModal('notice-filter')} /><IconButton name="cog-outline" label="Notification settings" onPress={() => showToast('Notification preferences are not provided by the Ginjer API.')} /></View>} />
       {isConnected ? <View style={[styles.infoNote, { marginHorizontal: 14 }]}><Icon name="information-outline" size={16} color={C.greenDark} /><Text style={styles.infoNoteText}>Sample alerts · Ginjer’s supplied API does not include notifications.</Text></View> : null}
       <SearchField value={query} onChangeText={setQuery} placeholder="Search notifications" style={{ marginHorizontal: 14, marginTop: 6, marginBottom: 8 }} />
       <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
@@ -747,11 +755,16 @@ function AppContent() {
   };
 
   const renderEdit = () => <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <ScreenHeader title="Edit Profile" onBack={() => setRoute('profile')} />
-    <ScrollView style={styles.screen} contentContainerStyle={styles.standardScroll} keyboardShouldPersistTaps="handled">
-      <Text style={styles.fieldLabel}>Full name</Text><TextInput value={profile.name} onChangeText={value => setProfile(current => ({ ...current, name: value }))} style={styles.textInput} />
-      <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Email</Text><TextInput value={profile.email} onChangeText={value => setProfile(current => ({ ...current, email: value }))} keyboardType="email-address" autoCapitalize="none" style={styles.textInput} />
-      <ActionButton title="Save changes" onPress={() => { setRoute('profile'); showToast('Profile updates are not available in the supplied Ginjer API.'); }} style={{ marginTop: 18 }} />
+    <ScreenHeader title="Edit Profile" onBack={() => { setProfileDraft(profile); setProfilePhotoDraftUri(profilePhotoUri); setRoute('profile'); }} right={<IconButton name="check" label="Save profile" color={C.greenDark} onPress={saveProfile} />} />
+    <ScrollView style={styles.screen} contentContainerStyle={styles.editProfileScroll} keyboardShouldPersistTaps="handled">
+      <View style={styles.editAvatarWrap}><ProfileAvatar uri={profilePhotoDraftUri} onEditPress={pickImage} size={112} /></View>
+      <ProfileField label="Full name" icon="account-outline" value={profileDraft.name} onChangeText={value => setProfileDraft(current => ({ ...current, name: value }))} />
+      <ProfileField label="Email" icon="email-outline" value={profileDraft.email} keyboardType="email-address" autoCapitalize="none" onChangeText={value => setProfileDraft(current => ({ ...current, email: value }))} />
+      <ProfileField label="Primary Phone Number" icon="phone-outline" value={profileDraft.primaryPhone || ''} keyboardType="phone-pad" onChangeText={value => setProfileDraft(current => ({ ...current, primaryPhone: value }))} />
+      <ProfileField label="Secondary phone Number" icon="phone-outline" value={profileDraft.secondaryPhone || ''} keyboardType="phone-pad" onChangeText={value => setProfileDraft(current => ({ ...current, secondaryPhone: value }))} />
+      <ProfileField label="Organization" icon="domain" value={profileDraft.organization || ''} editable={false} onPress={() => setModal('profile-organisations')} />
+      <ActionButton title="Save changes" onPress={saveProfile} style={{ marginTop: 18 }} />
+      {isConnected ? <Text style={styles.profileEditNote}>These changes stay in this app session. Ginjer’s supplied API does not support updating account details.</Text> : null}
     </ScrollView>
   </KeyboardAvoidingView>;
 
@@ -768,6 +781,15 @@ function AppContent() {
   };
 
   const renderOptions = () => {
+    if (modal === 'profile-organisations') {
+      const choices = (organisations.length ? organisations : [{ name: 'SenRa' }, { name: 'Individual' }, { name: 'SenRa IoT' }])
+        .filter(item => (item.name || item.organisationId || '').toLowerCase().includes(organizationQuery.toLowerCase()));
+      return <Sheet visible title="Organization" subtitle="Choose the organization shown on your profile." onClose={() => { setModal(null); setOrganizationQuery(''); }} actions={<ActionButton title="Close" secondary onPress={() => { setModal(null); setOrganizationQuery(''); }} />}>
+        <SearchField value={organizationQuery} onChangeText={setOrganizationQuery} placeholder="Search organizations" style={{ marginVertical: 8 }} />
+        {choices.map((item, index) => <OptionRow key={item.organisationId || item.name || index} title={item.name || item.organisationId} selected={profileDraft.organization === (item.name || item.organisationId)} onPress={() => { setProfileDraft(current => ({ ...current, organization: item.name || item.organisationId })); setModal(null); setOrganizationQuery(''); }} />)}
+        {!choices.length ? <Text style={styles.sheetEmpty}>No organizations match this search.</Text> : null}
+      </Sheet>;
+    }
     if (modal === 'organisations') return <Sheet visible title="Organizations" subtitle="Choose an accepted Ginjer organization." onClose={() => setModal(null)} actions={<ActionButton title="Close" secondary onPress={() => setModal(null)} />}>
       {organisations.map(organisation => <OptionRow key={organisation.organisationId} title={organisation.name || organisation.organisationId} onPress={() => chooseOrganisation(organisation)} />)}
     </Sheet>;
@@ -853,11 +875,13 @@ const styles = StyleSheet.create({
   tabSafeArea: { backgroundColor: C.white }, bottomTabs: { minHeight: 60, paddingTop: 3, paddingBottom: Platform.OS === 'android' ? 4 : 2, flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E9ECE7', backgroundColor: C.white }, tabButton: { flex: 1, height: 54, alignItems: 'center', justifyContent: 'center', gap: 2 }, tabLabel: { color: '#999F9A', fontSize: 9, lineHeight: 12, fontWeight: '500' }, tabLabelActive: { color: C.greenDark, fontWeight: '700' }, notificationsLink: { minHeight: 44, marginTop: 5, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: '#F1F6E9' }, notificationsLinkText: { flex: 1, color: C.greenDark, fontSize: 12, fontWeight: '600' },
   emptyBox: { minHeight: 170, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 18 }, emptyInline: { minHeight: 56, justifyContent: 'center' }, emptyText: { color: '#929A94', fontSize: 13, textAlign: 'center' },
   mapScreen: { flex: 1, backgroundColor: '#FFFFFF' }, mapHeader: { height: 48, zIndex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 16, paddingRight: 8, backgroundColor: '#FFFFFFF0' }, mapOverlay: { position: 'absolute', zIndex: 2, top: 58, left: 12, right: 12 }, mapSearch: { borderColor: '#E5EAE2' }, mapNotice: { position: 'absolute', zIndex: 1, top: 120, left: 12, right: 12, padding: 8, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: '#FFFFFFEE' }, mapNoticeText: { flex: 1, color: '#6E786F', fontSize: 9, lineHeight: 13 }, mapCount: { position: 'absolute', bottom: 12, left: 12, paddingHorizontal: 10, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, backgroundColor: '#FFFFFFF2', elevation: 2 }, mapCountText: { color: '#6F7970', fontSize: 10 }, currentLocationMarker: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, borderRadius: 12, backgroundColor: '#D94343', elevation: 5, shadowColor: '#641717', shadowOpacity: 0.25, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } }, currentLocationMarkerCenter: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.white }, markerBubble: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, borderRadius: 19, borderBottomLeftRadius: 5, elevation: 4 }, mapDeviceCard: { position: 'absolute', bottom: 12, left: 12, right: 12, minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 9, padding: 10, borderRadius: 13, backgroundColor: C.white, elevation: 5, shadowColor: '#162015', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }, mapDeviceName: { color: C.ink, fontSize: 13, fontWeight: '700' }, mapDeviceMeta: { color: C.muted, fontSize: 10, marginTop: 3 },
-  standardScroll: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 22 }, infoNote: { marginTop: 11, padding: 10, flexDirection: 'row', gap: 7, alignItems: 'center', borderWidth: 1, borderColor: '#E7EDDE', borderRadius: 10, backgroundColor: '#F4F8EE' }, infoNoteText: { flex: 1, color: '#6F7A6E', fontSize: 10, lineHeight: 15 }, statsRow: { flexDirection: 'row', gap: 10, marginTop: 12 }, statCard: { flex: 1, minHeight: 102, padding: 11, borderRadius: 12, backgroundColor: C.white, elevation: 1 }, statIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 9 }, statValue: { marginTop: 8, color: C.ink, fontSize: 19, fontWeight: '700' }, statLabel: { marginTop: 1, color: C.muted, fontSize: 10 }, sectionTitleSmall: { color: C.ink, fontSize: 13, fontWeight: '700', marginTop: 16, marginBottom: 8 }, metricCard: { marginTop: 10, padding: 13, borderRadius: 13, backgroundColor: C.white, elevation: 2, shadowColor: '#192512', shadowOpacity: 0.04, shadowRadius: 7, shadowOffset: { width: 0, height: 2 } }, metricHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }, metricName: { color: C.ink, fontSize: 12, fontWeight: '700' }, metricCaption: { color: '#999F9A', fontSize: 9, marginTop: 2 }, metricValue: { marginTop: 12, color: C.greenDark, fontSize: 25, fontWeight: '700', textAlign: 'center' }, metricFooter: { minHeight: 27, marginTop: 10, paddingTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line }, metricFooterText: { color: '#9CA39D', fontSize: 9 }, gauge: { height: 106, alignItems: 'center', justifyContent: 'flex-end', overflow: 'hidden' }, gaugeArc: { position: 'absolute', bottom: 0, width: 160, height: 80, borderWidth: 12, borderBottomWidth: 0, borderColor: '#C8E0E8', borderTopLeftRadius: 100, borderTopRightRadius: 100 }, gaugeNeedle: { position: 'absolute', left: 70, top: 46, width: 45, height: 2, backgroundColor: C.blue, transform: [{ rotate: '-37deg' }] }, gaugeValue: { marginBottom: 7, color: '#347F9B', fontSize: 22, fontWeight: '700' }, gaugeUnit: { fontSize: 13, fontWeight: '500' },
-  profileScroll: { paddingHorizontal: 17, paddingTop: 8, paddingBottom: 24 }, profileHeading: { marginTop: 2, color: C.ink, fontSize: 19, fontWeight: '700', textAlign: 'center' }, profileHero: { alignItems: 'center', paddingTop: 16, paddingBottom: 20 }, avatar: { width: 82, height: 82, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: 3, borderColor: C.white, borderRadius: 42, backgroundColor: '#E8F0DF', elevation: 2 }, avatarWrap: { position: 'relative' }, editPhotoButton: { position: 'absolute', bottom: -7, right: -7, width: 32, height: 32, borderRadius: 16, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, elevation: 4, shadowColor: '#15220E', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }, deletePhotoButton: { position: 'absolute', bottom: -7, left: -7, width: 32, height: 32, borderRadius: 16, backgroundColor: C.red, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, elevation: 4 }, avatarImage: { width: '100%', height: '100%' }, profileName: { color: C.ink, fontSize: 15, fontWeight: '700', marginTop: 9 }, profileEmail: { color: '#969D98', fontSize: 10, marginTop: 3 }, profileMenu: { overflow: 'hidden', borderRadius: 13, backgroundColor: C.white, elevation: 2 }, menuRow: { minHeight: 62, paddingHorizontal: 14, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EBEEEA' }, menuRowLast: { borderBottomWidth: 0 }, menuIconSlot: { width: 26, alignItems: 'center', justifyContent: 'center' }, menuCopy: { flex: 1, minWidth: 0, justifyContent: 'center' }, menuTitle: { color: C.ink, fontSize: 13, lineHeight: 18, fontWeight: '600' }, menuValue: { color: '#969D98', fontSize: 11, lineHeight: 15, marginTop: 2 }, profileFootnote: { marginTop: 14, color: '#A2A8A3', fontSize: 10, textAlign: 'center' },
+  standardScroll: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 22 }, dashboardHeading: { marginTop: 5, marginBottom: 8, color: C.ink, fontSize: 19, fontWeight: '700' }, infoNote: { marginTop: 11, padding: 10, flexDirection: 'row', gap: 7, alignItems: 'center', borderWidth: 1, borderColor: '#E7EDDE', borderRadius: 10, backgroundColor: '#F4F8EE' }, infoNoteText: { flex: 1, color: '#6F7A6E', fontSize: 10, lineHeight: 15 }, statsRow: { flexDirection: 'row', gap: 10, marginTop: 12 }, statCard: { flex: 1, minHeight: 102, padding: 11, borderRadius: 12, backgroundColor: C.white, elevation: 1 }, statIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 9 }, statValue: { marginTop: 8, color: C.ink, fontSize: 19, fontWeight: '700' }, statLabel: { marginTop: 1, color: C.muted, fontSize: 10 }, sectionTitleSmall: { color: C.ink, fontSize: 13, fontWeight: '700', marginTop: 16, marginBottom: 8 }, metricCard: { marginTop: 10, padding: 13, borderRadius: 13, backgroundColor: C.white, elevation: 2, shadowColor: '#192512', shadowOpacity: 0.04, shadowRadius: 7, shadowOffset: { width: 0, height: 2 } }, metricHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }, metricName: { color: C.ink, fontSize: 12, fontWeight: '700' }, metricCaption: { color: '#999F9A', fontSize: 9, marginTop: 2 }, metricValue: { marginTop: 12, color: C.greenDark, fontSize: 25, fontWeight: '700', textAlign: 'center' }, metricFooter: { minHeight: 27, marginTop: 10, paddingTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line }, metricFooterText: { color: '#9CA39D', fontSize: 9 }, gauge: { height: 106, alignItems: 'center', justifyContent: 'flex-end', overflow: 'hidden' }, gaugeArc: { position: 'absolute', bottom: 0, width: 160, height: 80, borderWidth: 12, borderBottomWidth: 0, borderColor: '#C8E0E8', borderTopLeftRadius: 100, borderTopRightRadius: 100 }, gaugeNeedle: { position: 'absolute', left: 70, top: 46, width: 45, height: 2, backgroundColor: C.blue, transform: [{ rotate: '-37deg' }] }, gaugeValue: { marginBottom: 7, color: '#347F9B', fontSize: 22, fontWeight: '700' }, gaugeUnit: { fontSize: 13, fontWeight: '500' },
+  profileScroll: { paddingHorizontal: 17, paddingTop: 8, paddingBottom: 24 }, profileHeading: { marginTop: 2, color: C.ink, fontSize: 19, fontWeight: '700', textAlign: 'center' }, profileHero: { minHeight: 112, flexDirection: 'row', alignItems: 'center', gap: 16, paddingTop: 12, paddingBottom: 18, paddingHorizontal: 10 }, profileIdentity: { flex: 1, minWidth: 0 }, avatar: { width: 82, height: 82, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: 3, borderColor: C.white, borderRadius: 42, backgroundColor: '#E8F0DF', elevation: 2 }, avatarWrap: { position: 'relative' }, editPhotoButton: { position: 'absolute', bottom: -7, right: -7, width: 32, height: 32, borderRadius: 16, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, elevation: 4, shadowColor: '#15220E', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }, avatarImage: { width: '100%', height: '100%' }, profileName: { color: C.ink, fontSize: 16, lineHeight: 21, fontWeight: '700' }, profileEmail: { color: '#969D98', fontSize: 11, lineHeight: 16, marginTop: 3 }, profileMenu: { overflow: 'hidden', borderRadius: 13, backgroundColor: C.white, elevation: 2 }, menuRow: { minHeight: 62, paddingHorizontal: 14, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EBEEEA' }, menuRowLast: { borderBottomWidth: 0 }, menuIconSlot: { width: 26, alignItems: 'center', justifyContent: 'center' }, menuCopy: { flex: 1, minWidth: 0, justifyContent: 'center' }, menuTitle: { color: C.ink, fontSize: 13, lineHeight: 18, fontWeight: '600' }, menuValue: { color: '#969D98', fontSize: 11, lineHeight: 15, marginTop: 2 }, logoutRow: { minHeight: 54, marginTop: 14, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderWidth: 1, borderColor: '#F1D9D6', borderRadius: 12, backgroundColor: C.white }, logoutText: { flex: 1, color: C.red, fontSize: 14, fontWeight: '600' }, profileFootnote: { marginTop: 14, color: '#A2A8A3', fontSize: 10, textAlign: 'center' },
+  editProfileScroll: { paddingHorizontal: 18, paddingTop: 15, paddingBottom: 28 }, editAvatarWrap: { alignItems: 'center', paddingTop: 3, paddingBottom: 27 }, profileFieldGroup: { marginBottom: 14 }, profileFieldLabel: { marginBottom: 6, color: C.greenDark, fontSize: 14, fontWeight: '600' }, profileField: { minHeight: 54, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 11, borderWidth: 1.3, borderColor: '#D4D9D3', borderRadius: 13, backgroundColor: C.white }, profileFieldInput: { flex: 1, minWidth: 0, minHeight: 50, color: C.ink, fontSize: 15 }, profileEditNote: { marginTop: 12, color: C.muted, fontSize: 11, lineHeight: 16, textAlign: 'center' },
   detailScroll: { paddingBottom: 18 }, detailSummary: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 15, paddingBottom: 12 }, detailName: { color: C.ink, fontSize: 16, fontWeight: '700' }, detailId: { color: '#7E8780', fontSize: 10, marginTop: 3 }, detailHeard: { color: '#969D98', fontSize: 9, marginTop: 3 }, detailFields: { flexDirection: 'row', gap: 9, paddingHorizontal: 16 }, detailField: { minHeight: 58, flex: 1, padding: 10, borderRadius: 10, backgroundColor: C.white, elevation: 1 }, detailFieldLabel: { color: '#A1A7A2', fontSize: 9 }, detailFieldValue: { color: C.ink, fontSize: 11, fontWeight: '600', marginTop: 5 }, expandButton: { minHeight: 35, marginHorizontal: 16, marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 9, backgroundColor: C.greenPale }, expandButtonText: { color: C.greenDark, fontSize: 11, fontWeight: '600' }, expandedDetails: { marginHorizontal: 16, marginTop: 8, padding: 10, borderRadius: 10, backgroundColor: C.white }, expandedLine: { color: '#727B74', fontSize: 10, lineHeight: 16 }, bold: { color: '#465047', fontWeight: '700' }, outputGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, paddingHorizontal: 16 }, outputCard: { position: 'relative', width: '48%', minHeight: 74, padding: 10, borderRadius: 11, backgroundColor: C.white, elevation: 1 }, outputLabel: { color: C.muted, fontSize: 9 }, outputValue: { color: C.ink, fontSize: 14, fontWeight: '700', marginTop: 6, paddingRight: 12 }, outputDot: { position: 'absolute', right: 9, bottom: 10, width: 10, height: 10, borderRadius: 6 }, detailSectionHeader: { marginHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, miniMap: { height: 170, marginHorizontal: 16, overflow: 'hidden', borderRadius: 11, backgroundColor: '#FFFFFF' }, miniMapMessage: { position: 'absolute', left: 10, right: 10, top: 10, padding: 9, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 8, backgroundColor: '#FFFFFFEE' }, miniMapText: { flex: 1, color: '#70796F', fontSize: 10 }, detailActions: { flexDirection: 'row', gap: 9, marginHorizontal: 16, marginTop: 11 },
   profileFootnote: { marginTop: 14, color: '#A2A8A3', fontSize: 10, textAlign: 'center' },
   noticeDate: { marginHorizontal: 16, marginTop: 14, marginBottom: 7, color: '#8B938D', fontSize: 10, fontWeight: '700' }, noticeRow: { minHeight: 69, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E8ECE7', backgroundColor: C.white }, noticeImage: { width: 38, height: 38, borderRadius: 20 }, noticeTitle: { color: C.ink, fontSize: 11, fontWeight: '700' }, noticeLocation: { color: '#969D98', fontSize: 9, marginTop: 3 }, noticeTime: { alignItems: 'flex-end', gap: 4 }, noticeTimeText: { color: '#9AA19B', fontSize: 9 }, unreadCount: { minWidth: 17, height: 17, paddingHorizontal: 4, overflow: 'hidden', borderRadius: 9, backgroundColor: C.green, color: C.white, fontSize: 9, textAlign: 'center', textAlignVertical: 'center' },
   modalScrim: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#10171299' }, sheet: { maxHeight: '84%', paddingTop: 8, paddingHorizontal: 18, paddingBottom: Platform.OS === 'ios' ? 25 : 14, borderTopLeftRadius: 20, borderTopRightRadius: 20, backgroundColor: C.white }, sheetGrabber: { width: 36, height: 4, alignSelf: 'center', marginBottom: 13, borderRadius: 4, backgroundColor: '#D9DED8' }, sheetTitle: { color: C.ink, fontSize: 17, fontWeight: '700', textAlign: 'center' }, sheetSubtitle: { alignSelf: 'center', maxWidth: 300, marginTop: 5, marginBottom: 12, color: '#969D98', fontSize: 11, lineHeight: 16, textAlign: 'center' }, sheetContent: { flexShrink: 1 }, sheetActions: { flexDirection: 'row', gap: 9, marginTop: 12 }, optionRow: { minHeight: 49, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EEF0EC' }, optionTitle: { color: C.ink, fontSize: 12, fontWeight: '500' }, optionSubtitle: { color: C.muted, fontSize: 10, marginTop: 3 }, sheetEmpty: { padding: 15, color: C.muted, fontSize: 12, textAlign: 'center' }, jsonInput: { minHeight: 96, marginTop: 6, textAlignVertical: 'top', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 12 },
   toast: { position: 'absolute', left: 20, right: 20, bottom: 74, zIndex: 20, minHeight: 38, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: '#26312B', elevation: 5 }, toastText: { color: C.white, fontSize: 11, textAlign: 'center' }, loadingOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8F9F7AA' },
 });
+
