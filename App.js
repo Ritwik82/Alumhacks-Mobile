@@ -550,22 +550,48 @@ function AppContent() {
     } finally { setLoading(false); }
   };
 
-  const loadAccountData = async (clientOverride, defaultId = '') => {
-    const orgs = await clientOverride.getOrganisations(defaultId);
+  const loadAccountData = async (clientOverride, defaultId = '', userOrgDetails = null) => {
+    let orgs = [];
+    try {
+      orgs = await clientOverride.getOrganisations(defaultId);
+    } catch (e) {
+      console.warn('Failed to get organisations:', e);
+    }
+    if (!orgs.length && defaultId) {
+      orgs = [{ organisationId: defaultId, name: userOrgDetails?.name || 'My Organization', isActive: true, isAccepted: true }];
+    }
     if (!orgs.length) throw new Error('No accepted organizations were returned for this account.');
     setOrganisations(orgs);
-    const failures = [];
-    for (const organisation of orgs) {
+
+    const preferredOrg = (defaultId && orgs.find(o => o.organisationId === defaultId)) || orgs[0];
+    const orderedOrgs = [preferredOrg, ...orgs.filter(o => o.organisationId !== preferredOrg.organisationId)];
+
+    for (const organisation of orderedOrgs) {
       try {
         const orgProjects = await clientOverride.getProjects(organisation);
-        if (!orgProjects.length) { failures.push(`No projects were returned for ${organisation.name || 'this organization'}.`); continue; }
-        setProjects(orgProjects); setActiveOrganisation(organisation);
-        const project = orgProjects.find(item => item.active !== false) || orgProjects[0];
-        await loadProject(organisation, project, clientOverride);
-        return;
-      } catch (error) { failures.push(error.message); }
+        if (orgProjects.length > 0) {
+          setProjects(orgProjects);
+          setActiveOrganisation(organisation);
+          const project = orgProjects.find(item => item.active !== false) || orgProjects[0];
+          await loadProject(organisation, project, clientOverride);
+          return;
+        }
+      } catch (err) {
+        console.warn('Error fetching projects for org:', err);
+      }
     }
-    throw new Error(failures.join(' '));
+
+    // If no projects in any organization, still successfully log user in
+    setActiveOrganisation(preferredOrg);
+    setProjects([]);
+    setActiveProject({ _id: 'none', name: 'No Projects' });
+    setDevices([]);
+    setModules([]);
+    setDemoMode(false);
+    setRoute('devices');
+    setTab('devices');
+    setLoginError('');
+    showToast('Signed in. No projects found for this organization.');
   };
 
   const submitLogin = async () => {
@@ -574,14 +600,22 @@ function AppContent() {
     try {
       let authToken = token.trim().replace(/^Bearer\s+/i, '');
       if (loginMode === 'password') {
-        const data = await client.signIn(email.trim(), password);
+        const cleanEmail = email.trim().toLowerCase();
+        const cleanPassword = password.trim();
+        const data = await client.signIn(cleanEmail, cleanPassword);
         const user = data.signIn;
         if (!user?.token) throw new Error('Sign-in returned no token. Check your Ginjer credentials.');
         authToken = user.token;
-        setProfile(current => ({ ...current, name: [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Ginjer User', email: user.emailId || email }));
+        const orgName = user.organisationDetails?.name || '';
+        setProfile(current => ({
+          ...current,
+          name: [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Ginjer User',
+          email: user.emailId || cleanEmail,
+          organization: orgName || current.organization || 'SenRa IoT',
+        }));
         const defaultId = (typeof user.defaultAccount === 'string' ? user.defaultAccount : user.defaultAccount?.organisationId) || user.organisationId;
         await client.saveToken(authToken);
-        await loadAccountData(client, defaultId);
+        await loadAccountData(client, defaultId, user.organisationDetails);
       } else {
         if (!authToken) throw new Error('Paste the token value from your Postman environment.');
         await client.saveToken(authToken);
@@ -590,7 +624,13 @@ function AppContent() {
       }
     } catch (error) {
       await client.clearToken();
-      setLoginError(error.message || 'Could not connect to Ginjer.');
+      let msg = error.message || 'Could not connect to Ginjer.';
+      if (/user details not found/i.test(msg)) {
+        msg = 'No user found with this email. Please verify your Ginjer email address.';
+      } else if (/invalid password/i.test(msg)) {
+        msg = 'Incorrect password. Please verify your password and try again.';
+      }
+      setLoginError(msg);
     } finally { setLoading(false); }
   };
 
