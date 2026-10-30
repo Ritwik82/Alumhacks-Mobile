@@ -18,4 +18,7 @@ Expo Go is for development previews. An installable APK or iOS app requires a na
 
 ## API and credentials
 
-The phone sends Ginjer requests to the local Node backend on the computer. The backend keeps the token in memory and proxies requests to Ginjer. Use your own account or token, never commit credentials, and keep the backend on a trusted private network.
+The phone sends Ginjer requests to the local Node backend on the computer. The backend keeps the token in memory and proxies requests to `https://devapi.ginjer.io/graphql` by default. To use another endpoint, set `GINJER_GRAPHQL_URL` before starting the backend. Use your own account or token, never commit credentials, and keep the backend on a trusted private network.
+
+While connected to Ginjer, the app reloads the selected project's device list and details every 20 seconds. When **All Projects** is selected, it refreshes all projects in the active organization. The device list shows the last successful refresh time; if a refresh fails, it shows **Refresh delayed** and retries on the next interval. Automation and notification data are preview-only because the supplied Ginjer API collection has no automation or notification query/mutation.
+
