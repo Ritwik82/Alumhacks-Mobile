@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   BackHandler,
   Image,
   KeyboardAvoidingView,
@@ -43,13 +44,55 @@ const NOTICE_IMAGES = {
   'notice-water-safe': require('./assets/reference/notice-water-safe.png'),
   'notice-light': require('./assets/reference/notice-light.png'),
 };
+const GOOGLE_MAPS_LIGHT_STYLE = [
+  { elementType: 'geometry', stylers: [{ color: '#f5f5f5' }] },
+  { elementType: 'labels.icon', stylers: [{ visibility: 'on' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#525b54' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }] },
+  { featureType: 'administrative.land_parcel', elementType: 'labels.text.fill', stylers: [{ color: '#bdbdbd' }] },
+  { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#eef3ea' }] },
+  { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#5d675f' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#dcedd8' }] },
+  { featureType: 'poi.park', elementType: 'labels.text.fill', stylers: [{ color: '#4b7554' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
+  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#fedda0' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#e7c588' }] },
+  { featureType: 'road.local', elementType: 'labels.text.fill', stylers: [{ color: '#808982' }] },
+  { featureType: 'transit.line', elementType: 'geometry', stylers: [{ color: '#e5e5e5' }] },
+  { featureType: 'transit.station', elementType: 'geometry', stylers: [{ color: '#eeeeee' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#c7e5f5' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#688d9e' }] },
+];
+
 const DEMO_PROFILE = { name: 'Shaheen Ansari', email: 'shaheenansari2519cs@gmail.com' };
+const POPULAR_PLACES = {
+  delhi: { latitude: 28.6139, longitude: 77.2090, name: 'Delhi, India' },
+  'new delhi': { latitude: 28.6139, longitude: 77.2090, name: 'New Delhi, India' },
+  mumbai: { latitude: 19.0760, longitude: 72.8777, name: 'Mumbai, Maharashtra' },
+  jaipur: { latitude: 26.9124, longitude: 75.7873, name: 'Jaipur, Rajasthan' },
+  bangalore: { latitude: 12.9716, longitude: 77.5946, name: 'Bengaluru, Karnataka' },
+  bengaluru: { latitude: 12.9716, longitude: 77.5946, name: 'Bengaluru, Karnataka' },
+  hyderabad: { latitude: 17.3850, longitude: 78.4867, name: 'Hyderabad, Telangana' },
+  chennai: { latitude: 13.0827, longitude: 80.2707, name: 'Chennai, Tamil Nadu' },
+  kolkata: { latitude: 22.5726, longitude: 88.3639, name: 'Kolkata, West Bengal' },
+  pune: { latitude: 18.5204, longitude: 73.8567, name: 'Pune, Maharashtra' },
+  ahmedabad: { latitude: 23.0225, longitude: 72.5714, name: 'Ahmedabad, Gujarat' },
+  lucknow: { latitude: 26.8467, longitude: 80.9462, name: 'Lucknow, Uttar Pradesh' },
+  chandigarh: { latitude: 30.7333, longitude: 76.7794, name: 'Chandigarh, India' },
+  indore: { latitude: 22.7196, longitude: 75.8577, name: 'Indore, Madhya Pradesh' },
+  bhopal: { latitude: 23.2599, longitude: 77.4126, name: 'Bhopal, Madhya Pradesh' },
+  noida: { latitude: 28.5355, longitude: 77.3910, name: 'Noida, Uttar Pradesh' },
+  gurgaon: { latitude: 28.4595, longitude: 77.0266, name: 'Gurgaon, Haryana' },
+  gurugram: { latitude: 28.4595, longitude: 77.0266, name: 'Gurugram, Haryana' },
+};
+
 
 function IconButton({ name, onPress, label, style, color = C.muted, size = 21 }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={8} style={[styles.iconButton, style]}><Icon name={name} size={size} color={color} /></Pressable>;
 }
 
-function ProfileAvatar({ uri, onEditPress, size = 82, style }) {
+function ProfileAvatar({ uri, onEditPress, onDeletePress, size = 82, style }) {
   const radius = size / 2;
   return (
     <View style={[styles.avatarWrap, { width: size, height: size }, style]}>
@@ -59,6 +102,11 @@ function ProfileAvatar({ uri, onEditPress, size = 82, style }) {
       <Pressable accessibilityRole="button" accessibilityLabel="Edit profile photo" onPress={onEditPress} hitSlop={12} style={styles.editPhotoButton}>
         <Icon name="camera-outline" size={15} color={C.white} />
       </Pressable>
+      {uri && onDeletePress ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Delete profile photo" onPress={onDeletePress} hitSlop={12} style={styles.deletePhotoButton}>
+          <Icon name="trash-can-outline" size={15} color={C.white} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -82,11 +130,18 @@ function ScreenHeader({ title, onBack, right }) {
   </View>;
 }
 
-function SearchField({ value, onChangeText, placeholder = 'Search devices', style }) {
+function SearchField({ value, onChangeText, placeholder = 'Search devices', style, onSubmitEditing }) {
   return <View style={[styles.searchField, style]}>
     <Icon name="magnify" size={20} color={C.muted} />
-    <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor="#A0A6A1" style={styles.searchInput} returnKeyType="search" accessibilityLabel={placeholder} />
-    {value ? <IconButton name="close-circle" label="Clear search" size={18} onPress={() => onChangeText('')} /> : null}
+    <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor="#A0A6A1" style={styles.searchInput} returnKeyType="search" accessibilityLabel={placeholder} onSubmitEditing={onSubmitEditing} />
+    {value ? (
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Pressable onPress={onSubmitEditing} style={{ paddingHorizontal: 6 }} hitSlop={6} accessibilityLabel="Search">
+          <Icon name="arrow-right-circle" size={20} color={C.greenDark} />
+        </Pressable>
+        <IconButton name="close-circle" label="Clear search" size={18} onPress={() => onChangeText('')} />
+      </View>
+    ) : null}
   </View>;
 }
 
@@ -190,6 +245,7 @@ function AppContent() {
   const [locating, setLocating] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState(demoDevices[1]);
   const [selectedMapDevice, setSelectedMapDevice] = useState(null);
+  const [selectedCustomLocation, setSelectedCustomLocation] = useState(null);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [noticeFilter, setNoticeFilter] = useState('all');
@@ -201,7 +257,11 @@ function AppContent() {
   const client = useMemo(() => serverUrl ? new GinjerClient(serverUrl) : null, [serverUrl]);
   const isConnected = connectedToBackend && !demoMode;
   const hasTabs = ['devices', 'locations', 'analytics', 'profile'].includes(route);
-  const positionableDevices = useMemo(() => devices.filter(hasCoordinates), [devices]);
+  const positionableDevices = useMemo(() => {
+    const withCoords = devices.filter(hasCoordinates);
+    return withCoords.length > 0 ? withCoords : demoDevices.filter(hasCoordinates);
+  }, [devices]);
+  const isFallbackDemo = isConnected && devices.filter(hasCoordinates).length === 0;
   const showToast = useCallback(message => {
     setToast(message);
     setTimeout(() => setToast(''), 2500);
@@ -233,6 +293,77 @@ function AppContent() {
     }
   }, [locating, showToast]);
 
+  const removeProfilePhoto = useCallback(() => {
+    Alert.alert(
+      'Delete Photo',
+      'Are you sure you want to delete your profile photo?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setProfilePhotoUri(null);
+            showToast('Profile photo deleted.');
+          },
+        },
+      ]
+    );
+  }, [showToast]);
+
+  const handleMapPress = useCallback(async e => {
+    const coordinate = e.nativeEvent?.coordinate;
+    if (!coordinate) return;
+    setSelectedMapDevice(null);
+    const fallbackName = `${coordinate.latitude.toFixed(4)}, ${coordinate.longitude.toFixed(4)}`;
+    setSelectedCustomLocation({ latitude: coordinate.latitude, longitude: coordinate.longitude, placeName: fallbackName });
+    try {
+      const places = await Location.reverseGeocodeAsync(coordinate);
+      if (places && places.length > 0) {
+        const p = places[0];
+        const label = [p.name || p.street, p.city || p.district || p.subregion, p.region || p.country].filter(Boolean).join(', ');
+        if (label) setSelectedCustomLocation({ latitude: coordinate.latitude, longitude: coordinate.longitude, placeName: label });
+      }
+    } catch {}
+  }, []);
+
+  const handleSearchSubmit = useCallback(async () => {
+    const q = (query || '').trim();
+    if (!q) return;
+    const match = positionableDevices.find(d => `${d.name} ${d.id} ${d.loc}`.toLowerCase().includes(q.toLowerCase()));
+    if (match && hasCoordinates(match)) {
+      const coord = { latitude: Number(match.position.lat), longitude: Number(match.position.lng) };
+      setSelectedMapDevice(match);
+      setSelectedCustomLocation(null);
+      mapRef.current?.animateToRegion({ ...coord, latitudeDelta: 0.05, longitudeDelta: 0.05 }, 500);
+      showToast(`Found device: ${match.name}`);
+      return;
+    }
+    const key = q.toLowerCase();
+    if (POPULAR_PLACES[key]) {
+      const loc = POPULAR_PLACES[key];
+      const coord = { latitude: loc.latitude, longitude: loc.longitude };
+      setSelectedCustomLocation({ ...coord, placeName: loc.name });
+      setSelectedMapDevice(null);
+      mapRef.current?.animateToRegion({ ...coord, latitudeDelta: 0.15, longitudeDelta: 0.15 }, 500);
+      showToast(`Selected: ${loc.name}`);
+      return;
+    }
+    try {
+      const results = await Location.geocodeAsync(q);
+      if (results && results.length > 0) {
+        const first = results[0];
+        const coord = { latitude: first.latitude, longitude: first.longitude };
+        setSelectedCustomLocation({ ...coord, placeName: q });
+        setSelectedMapDevice(null);
+        mapRef.current?.animateToRegion({ ...coord, latitudeDelta: 0.12, longitudeDelta: 0.12 }, 500);
+        showToast(`Selected: ${q}`);
+        return;
+      }
+    } catch {}
+    showToast(`No location found for "${q}".`);
+  }, [query, positionableDevices, showToast]);
+
   const pickImage = useCallback(async () => {
     try {
       let permission = await ImagePicker.getMediaLibraryPermissionsAsync();
@@ -256,7 +387,7 @@ function AppContent() {
   }, [showToast]);
 
   const changeTab = useCallback(nextTab => {
-    setTab(nextTab); setRoute(nextTab); setQuery(''); setSelectedMapDevice(null); setExpanded(false);
+    setTab(nextTab); setRoute(nextTab); setQuery(''); setSelectedMapDevice(null); setSelectedCustomLocation(null); setExpanded(false);
   }, []);
 
   const goToDevice = useCallback((device, from = route) => {
@@ -293,7 +424,7 @@ function AppContent() {
   }, [route, positionableDevices, selectedMapDevice]);
 
   const checkServer = async () => {
-    const candidate = serverInput.trim().replace(/\/$/, '');
+    const candidate = serverInput.trim().replace(/[./]+$/, '');
     try {
       const parsed = new URL(candidate);
       if (parsed.protocol !== 'http:' || !parsed.port || parsed.pathname !== '/') throw new Error('Enter the full local URL, including :8787.');
@@ -493,7 +624,7 @@ function AppContent() {
     </ScrollView>
   </View>;
 
-  const mapSearch = <SearchField value={query} onChangeText={setQuery} placeholder="Search devices on map" style={styles.mapSearch} />;
+  const mapSearch = <SearchField value={query} onChangeText={setQuery} onSubmitEditing={handleSearchSubmit} placeholder="Search devices or places (e.g. Jaipur)" style={styles.mapSearch} />;
   const renderMap = full => {
     const selected = full ? selectedMapDevice : null;
     const projectPosition = activeProject?.location;
@@ -505,22 +636,27 @@ function AppContent() {
     const initial = coordinates[0]
       || (hasCoordinates({ position: projectPosition }) ? { latitude: Number(projectPosition.lat), longitude: Number(projectPosition.lng) } : { latitude: 22.9734, longitude: 78.6569 });
     return <View style={styles.mapScreen}>
-      <MapView ref={mapRef} key={`${full ? 'full' : 'detail'}-${route}`} style={StyleSheet.absoluteFill} initialRegion={{ ...initial, latitudeDelta: coordinates.length ? 2.5 : 24, longitudeDelta: coordinates.length ? 2.5 : 24 }} showsUserLocation={false} showsCompass>
-        {mapDevices.map(device => <Marker key={device.apiId || device.id} coordinate={{ latitude: Number(device.position.lat), longitude: Number(device.position.lng) }} title={device.name} description={`${device.loc} · Last heard ${device.heard}`} onPress={() => { setSelectedMapDevice(device); if (!full) setSelectedDevice(device); }}>
+      <MapView ref={mapRef} key={`${full ? 'full' : 'detail'}-${route}`} style={StyleSheet.absoluteFill} initialRegion={{ ...initial, latitudeDelta: coordinates.length ? 2.5 : 24, longitudeDelta: coordinates.length ? 2.5 : 24 }} showsUserLocation={false} showsCompass userInterfaceStyle="light" customMapStyle={GOOGLE_MAPS_LIGHT_STYLE} onPress={handleMapPress}>
+        {mapDevices.map(device => <Marker key={device.apiId || device.id} coordinate={{ latitude: Number(device.position.lat), longitude: Number(device.position.lng) }} title={device.name} description={`${device.loc} · Last heard ${device.heard}`} onPress={() => { setSelectedCustomLocation(null); setSelectedMapDevice(device); if (!full) setSelectedDevice(device); }}>
           <View style={[styles.markerBubble, { backgroundColor: chipColor(device.chips?.[0]?.status) }]}><Icon name={kindIcon(device.kind)} size={17} color={C.white} /></View>
         </Marker>)}
+        {selectedCustomLocation ? <Marker coordinate={{ latitude: selectedCustomLocation.latitude, longitude: selectedCustomLocation.longitude }} title={selectedCustomLocation.placeName} description="Selected on map"><View style={[styles.markerBubble, { backgroundColor: C.red }]}><Icon name="map-marker" size={17} color={C.white} /></View></Marker> : null}
         {currentLocation ? <Marker coordinate={currentLocation} title="Your current location" description="Your phone’s location" zIndex={1000} tracksViewChanges={false}>
           <View style={styles.currentLocationMarker}><View style={styles.currentLocationMarkerCenter} /></View>
         </Marker> : null}
       </MapView>
       {full ? <ScreenHeader title="Device Map" onBack={onDetailBack} /> : <View style={styles.mapHeader}><Text style={styles.sectionTitle}>Locations</Text><IconButton name="crosshairs-gps" label="Show my current location" color={locating ? C.green : C.greenDark} onPress={showCurrentLocation} /></View>}
       {full ? <View style={[styles.mapOverlay, { top: 56 }]}>{mapSearch}</View> : <View style={styles.mapOverlay}>{mapSearch}</View>}
-      {visibleMarkers.length === 0 ? <View style={styles.mapNotice}><Icon name="map-marker-off-outline" size={17} color={C.greenDark} /><Text style={styles.mapNoticeText}>{isConnected ? 'Ginjer has not returned coordinates for devices in this project yet.' : 'Demo devices have no verified coordinates. Connect to Ginjer to map live devices.'}</Text></View> : null}
-      <View style={styles.mapCount}><Icon name="map-marker-multiple-outline" color={C.greenDark} size={15} /><Text style={styles.mapCountText}>{visibleMarkers.length} of {devices.length} devices with coordinates</Text></View>
+      {visibleMarkers.length === 0 ? <View style={styles.mapNotice}><Icon name="map-marker-off-outline" size={17} color={C.greenDark} /><Text style={styles.mapNoticeText}>Tap anywhere on the map or search a city to select a location.</Text></View> : isFallbackDemo ? <View style={styles.mapNotice}><Icon name="information-outline" size={17} color={C.greenDark} /><Text style={styles.mapNoticeText}>Showing sample device pins. Tap map or search to select points.</Text></View> : null}
+      <View style={styles.mapCount}><Icon name="map-marker-multiple-outline" color={C.greenDark} size={15} /><Text style={styles.mapCountText}>{isFallbackDemo ? `${visibleMarkers.length} sample devices (tap map to select)` : `${visibleMarkers.length} of ${devices.length} devices with coordinates`}</Text></View>
       {selectedMapDevice ? <View style={styles.mapDeviceCard}>
         <DeviceThumb kind={selectedMapDevice.kind} size={40} />
         <View style={{ flex: 1, minWidth: 0 }}><Text numberOfLines={1} style={styles.mapDeviceName}>{selectedMapDevice.name}</Text><Text numberOfLines={1} style={styles.mapDeviceMeta}>{selectedMapDevice.loc} · {selectedMapDevice.heard}</Text></View>
         <IconButton name="chevron-right" label={`Open ${selectedMapDevice.name}`} color={C.greenDark} onPress={() => goToDevice(selectedMapDevice, route)} />
+      </View> : selectedCustomLocation ? <View style={styles.mapDeviceCard}>
+        <View style={[styles.avatar, { width: 40, height: 40, borderRadius: 20, backgroundColor: C.redPale }]}><Icon name="map-marker" size={24} color={C.red} /></View>
+        <View style={{ flex: 1, minWidth: 0, marginLeft: 8 }}><Text numberOfLines={1} style={styles.mapDeviceName}>{selectedCustomLocation.placeName}</Text><Text numberOfLines={1} style={styles.mapDeviceMeta}>{selectedCustomLocation.latitude.toFixed(4)}, {selectedCustomLocation.longitude.toFixed(4)}</Text></View>
+        <IconButton name="close" label="Clear selected location" color={C.muted} size={19} onPress={() => setSelectedCustomLocation(null)} />
       </View> : null}
     </View>;
   };
@@ -551,9 +687,10 @@ function AppContent() {
   const renderProfile = () => <ScrollView style={styles.screen} contentContainerStyle={styles.profileScroll}>
     <Text style={styles.profileHeading}>Profile</Text>
     <View style={styles.profileHero}>
-      <ProfileAvatar uri={profilePhotoUri} onEditPress={pickImage} size={88} />
+      <ProfileAvatar uri={profilePhotoUri} onEditPress={pickImage} onDeletePress={removeProfilePhoto} size={88} />
       <Text style={styles.profileName}>{profile.name}</Text>
       <Text style={styles.profileEmail}>{profile.email}</Text>
+      {profilePhotoUri ? <Pressable onPress={removeProfilePhoto} style={styles.removePhotoButton} hitSlop={8} accessibilityRole="button" accessibilityLabel="Delete profile photo"><Icon name="trash-can-outline" size={14} color={C.red} /><Text style={styles.removePhotoText}>Delete photo</Text></Pressable> : null}
     </View>
     <View style={styles.profileMenu}>
       <ProfileMenuRow icon="account-outline" title="My Profile" onPress={() => setRoute('edit')} />
@@ -579,7 +716,7 @@ function AppContent() {
       {device.outputs?.length ? <View style={styles.outputGrid}>{device.outputs.map((output, index) => <View key={output.outputId || index} style={styles.outputCard}><Text numberOfLines={1} style={styles.outputLabel}>{output.outputName || output.label || `Output ${index + 1}`}</Text><Text style={styles.outputValue}>{formatOutput(output.value ?? output.label)}</Text><View style={[styles.outputDot, { backgroundColor: chipColor(device.chips?.[0]?.status) }]} /></View>)}</View> : <View style={styles.emptyInline}><Text style={styles.emptyText}>No output data returned for this device.</Text></View>}
       <View style={styles.detailSectionHeader}><Text style={styles.sectionTitleSmall}>Location</Text><Pressable onPress={() => openFullMap('detail', device)}><Text style={styles.linkText}>View map</Text></Pressable></View>
       <View style={styles.miniMap}>
-        <MapView style={StyleSheet.absoluteFill} initialRegion={coords ? { latitude: Number(device.position.lat), longitude: Number(device.position.lng), latitudeDelta: 0.08, longitudeDelta: 0.08 } : { latitude: 22.9734, longitude: 78.6569, latitudeDelta: 24, longitudeDelta: 24 }} scrollEnabled={coords} zoomEnabled={coords}>
+        <MapView style={StyleSheet.absoluteFill} initialRegion={coords ? { latitude: Number(device.position.lat), longitude: Number(device.position.lng), latitudeDelta: 0.08, longitudeDelta: 0.08 } : { latitude: 22.9734, longitude: 78.6569, latitudeDelta: 24, longitudeDelta: 24 }} scrollEnabled={coords} zoomEnabled={coords} userInterfaceStyle="light" customMapStyle={GOOGLE_MAPS_LIGHT_STYLE}>
           {coords ? <Marker coordinate={{ latitude: Number(device.position.lat), longitude: Number(device.position.lng) }} title={device.name} description={device.loc} /> : null}
         </MapView>
         {!coords ? <View style={styles.miniMapMessage}><Icon name="map-marker-off-outline" size={17} color={C.greenDark} /><Text style={styles.miniMapText}>Coordinates were not returned for this device.</Text></View> : null}
@@ -609,6 +746,10 @@ function AppContent() {
   const renderEdit = () => <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <ScreenHeader title="Edit Profile" onBack={() => setRoute('profile')} />
     <ScrollView style={styles.screen} contentContainerStyle={styles.standardScroll} keyboardShouldPersistTaps="handled">
+      <View style={{ alignItems: 'center', marginBottom: 16 }}>
+        <ProfileAvatar uri={profilePhotoUri} onEditPress={pickImage} onDeletePress={removeProfilePhoto} size={88} />
+        {profilePhotoUri ? <Pressable onPress={removeProfilePhoto} style={styles.removePhotoButton} hitSlop={8}><Icon name="trash-can-outline" size={14} color={C.red} /><Text style={styles.removePhotoText}>Delete photo</Text></Pressable> : null}
+      </View>
       <Text style={styles.fieldLabel}>Full name</Text><TextInput value={profile.name} onChangeText={value => setProfile(current => ({ ...current, name: value }))} style={styles.textInput} />
       <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Email</Text><TextInput value={profile.email} onChangeText={value => setProfile(current => ({ ...current, email: value }))} keyboardType="email-address" autoCapitalize="none" style={styles.textInput} />
       <ActionButton title="Save changes" onPress={() => { setRoute('profile'); showToast('Profile updates are not available in the supplied Ginjer API.'); }} style={{ marginTop: 18 }} />
@@ -712,10 +853,10 @@ const styles = StyleSheet.create({
   listSummary: { paddingHorizontal: 18, paddingTop: 13, paddingBottom: 7, flexDirection: 'row', justifyContent: 'space-between' }, summaryText: { color: '#929A94', fontSize: 10, fontWeight: '500' }, deviceList: { gap: 10, paddingHorizontal: 14, paddingTop: 4, paddingBottom: 16 }, deviceCard: { minHeight: 114, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, borderRadius: 14, backgroundColor: C.white, elevation: 2, shadowColor: '#1F2C19', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }, deviceThumb: { alignItems: 'center', justifyContent: 'center', borderRadius: 11, backgroundColor: '#F4F7F1' }, deviceCardBody: { flex: 1, minWidth: 0, alignSelf: 'stretch', justifyContent: 'center' }, deviceName: { color: C.ink, fontSize: 13, fontWeight: '700' }, deviceId: { color: '#929A94', fontSize: 9, marginTop: 2 }, deviceLocation: { color: '#7C857E', fontSize: 10, marginTop: 4 }, chipRow: { flexDirection: 'row', gap: 5, marginTop: 7 }, statusChip: { maxWidth: 100, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 6 }, statusChipText: { fontSize: 9, fontWeight: '600' }, deviceCardMeta: { width: 63, alignItems: 'flex-end', alignSelf: 'stretch', justifyContent: 'center' }, onlineDot: { width: 8, height: 8, borderRadius: 5, marginBottom: 4 }, lastLabel: { color: '#A1A7A2', fontSize: 8 }, lastTime: { maxWidth: '100%', marginTop: 2, color: '#626B64', fontSize: 8, lineHeight: 11, textAlign: 'right' },
   tabSafeArea: { backgroundColor: C.white }, bottomTabs: { minHeight: 60, paddingTop: 3, paddingBottom: Platform.OS === 'android' ? 4 : 2, flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E9ECE7', backgroundColor: C.white }, tabButton: { flex: 1, height: 54, alignItems: 'center', justifyContent: 'center', gap: 2 }, tabLabel: { color: '#999F9A', fontSize: 9, lineHeight: 12, fontWeight: '500' }, tabLabelActive: { color: C.greenDark, fontWeight: '700' }, notificationsLink: { minHeight: 44, marginTop: 5, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: '#F1F6E9' }, notificationsLinkText: { flex: 1, color: C.greenDark, fontSize: 12, fontWeight: '600' },
   emptyBox: { minHeight: 170, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 18 }, emptyInline: { minHeight: 56, justifyContent: 'center' }, emptyText: { color: '#929A94', fontSize: 13, textAlign: 'center' },
-  mapScreen: { flex: 1, backgroundColor: '#E6EBE1' }, mapHeader: { height: 48, zIndex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 16, paddingRight: 8, backgroundColor: '#FFFFFFF0' }, mapOverlay: { position: 'absolute', zIndex: 2, top: 58, left: 12, right: 12 }, mapSearch: { borderColor: '#E5EAE2' }, mapNotice: { position: 'absolute', zIndex: 1, top: 120, left: 12, right: 12, padding: 8, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: '#FFFFFFEE' }, mapNoticeText: { flex: 1, color: '#6E786F', fontSize: 9, lineHeight: 13 }, mapCount: { position: 'absolute', bottom: 12, left: 12, paddingHorizontal: 10, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, backgroundColor: '#FFFFFFF2', elevation: 2 }, mapCountText: { color: '#6F7970', fontSize: 10 }, currentLocationMarker: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, borderRadius: 12, backgroundColor: '#D94343', elevation: 5, shadowColor: '#641717', shadowOpacity: 0.25, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } }, currentLocationMarkerCenter: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.white }, markerBubble: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, borderRadius: 19, borderBottomLeftRadius: 5, elevation: 4 }, mapDeviceCard: { position: 'absolute', bottom: 12, left: 12, right: 12, minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 9, padding: 10, borderRadius: 13, backgroundColor: C.white, elevation: 5, shadowColor: '#162015', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }, mapDeviceName: { color: C.ink, fontSize: 13, fontWeight: '700' }, mapDeviceMeta: { color: C.muted, fontSize: 10, marginTop: 3 },
+  mapScreen: { flex: 1, backgroundColor: '#FFFFFF' }, mapHeader: { height: 48, zIndex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 16, paddingRight: 8, backgroundColor: '#FFFFFFF0' }, mapOverlay: { position: 'absolute', zIndex: 2, top: 58, left: 12, right: 12 }, mapSearch: { borderColor: '#E5EAE2' }, mapNotice: { position: 'absolute', zIndex: 1, top: 120, left: 12, right: 12, padding: 8, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: '#FFFFFFEE' }, mapNoticeText: { flex: 1, color: '#6E786F', fontSize: 9, lineHeight: 13 }, mapCount: { position: 'absolute', bottom: 12, left: 12, paddingHorizontal: 10, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, backgroundColor: '#FFFFFFF2', elevation: 2 }, mapCountText: { color: '#6F7970', fontSize: 10 }, currentLocationMarker: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, borderRadius: 12, backgroundColor: '#D94343', elevation: 5, shadowColor: '#641717', shadowOpacity: 0.25, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } }, currentLocationMarkerCenter: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.white }, markerBubble: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, borderRadius: 19, borderBottomLeftRadius: 5, elevation: 4 }, mapDeviceCard: { position: 'absolute', bottom: 12, left: 12, right: 12, minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 9, padding: 10, borderRadius: 13, backgroundColor: C.white, elevation: 5, shadowColor: '#162015', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }, mapDeviceName: { color: C.ink, fontSize: 13, fontWeight: '700' }, mapDeviceMeta: { color: C.muted, fontSize: 10, marginTop: 3 },
   standardScroll: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 22 }, infoNote: { marginTop: 11, padding: 10, flexDirection: 'row', gap: 7, alignItems: 'center', borderWidth: 1, borderColor: '#E7EDDE', borderRadius: 10, backgroundColor: '#F4F8EE' }, infoNoteText: { flex: 1, color: '#6F7A6E', fontSize: 10, lineHeight: 15 }, statsRow: { flexDirection: 'row', gap: 10, marginTop: 12 }, statCard: { flex: 1, minHeight: 102, padding: 11, borderRadius: 12, backgroundColor: C.white, elevation: 1 }, statIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 9 }, statValue: { marginTop: 8, color: C.ink, fontSize: 19, fontWeight: '700' }, statLabel: { marginTop: 1, color: C.muted, fontSize: 10 }, sectionTitleSmall: { color: C.ink, fontSize: 13, fontWeight: '700', marginTop: 16, marginBottom: 8 }, metricCard: { marginTop: 10, padding: 13, borderRadius: 13, backgroundColor: C.white, elevation: 2, shadowColor: '#192512', shadowOpacity: 0.04, shadowRadius: 7, shadowOffset: { width: 0, height: 2 } }, metricHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }, metricName: { color: C.ink, fontSize: 12, fontWeight: '700' }, metricCaption: { color: '#999F9A', fontSize: 9, marginTop: 2 }, metricValue: { marginTop: 12, color: C.greenDark, fontSize: 25, fontWeight: '700', textAlign: 'center' }, metricFooter: { minHeight: 27, marginTop: 10, paddingTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line }, metricFooterText: { color: '#9CA39D', fontSize: 9 }, gauge: { height: 106, alignItems: 'center', justifyContent: 'flex-end', overflow: 'hidden' }, gaugeArc: { position: 'absolute', bottom: 0, width: 160, height: 80, borderWidth: 12, borderBottomWidth: 0, borderColor: '#C8E0E8', borderTopLeftRadius: 100, borderTopRightRadius: 100 }, gaugeNeedle: { position: 'absolute', left: 70, top: 46, width: 45, height: 2, backgroundColor: C.blue, transform: [{ rotate: '-37deg' }] }, gaugeValue: { marginBottom: 7, color: '#347F9B', fontSize: 22, fontWeight: '700' }, gaugeUnit: { fontSize: 13, fontWeight: '500' },
   profileScroll: { paddingHorizontal: 17, paddingTop: 8, paddingBottom: 24 }, profileHeading: { marginTop: 2, color: C.ink, fontSize: 19, fontWeight: '700', textAlign: 'center' }, profileHero: { alignItems: 'center', paddingTop: 16, paddingBottom: 20 }, avatar: { width: 82, height: 82, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: 3, borderColor: C.white, borderRadius: 42, backgroundColor: '#E8F0DF', elevation: 2 }, avatarWrap: { position: 'relative' }, editPhotoButton: { position: 'absolute', bottom: -7, right: -7, width: 32, height: 32, borderRadius: 16, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.white, elevation: 4, shadowColor: '#15220E', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }, avatarImage: { width: '100%', height: '100%' }, profileName: { color: C.ink, fontSize: 15, fontWeight: '700', marginTop: 9 }, profileEmail: { color: '#969D98', fontSize: 10, marginTop: 3 }, profileMenu: { overflow: 'hidden', borderRadius: 13, backgroundColor: C.white, elevation: 2 }, menuRow: { minHeight: 62, paddingHorizontal: 14, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EBEEEA' }, menuRowLast: { borderBottomWidth: 0 }, menuIconSlot: { width: 26, alignItems: 'center', justifyContent: 'center' }, menuCopy: { flex: 1, minWidth: 0, justifyContent: 'center' }, menuTitle: { color: C.ink, fontSize: 13, lineHeight: 18, fontWeight: '600' }, menuValue: { color: '#969D98', fontSize: 11, lineHeight: 15, marginTop: 2 }, profileFootnote: { marginTop: 14, color: '#A2A8A3', fontSize: 10, textAlign: 'center' },
-  detailScroll: { paddingBottom: 18 }, detailSummary: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 15, paddingBottom: 12 }, detailName: { color: C.ink, fontSize: 16, fontWeight: '700' }, detailId: { color: '#7E8780', fontSize: 10, marginTop: 3 }, detailHeard: { color: '#969D98', fontSize: 9, marginTop: 3 }, detailFields: { flexDirection: 'row', gap: 9, paddingHorizontal: 16 }, detailField: { minHeight: 58, flex: 1, padding: 10, borderRadius: 10, backgroundColor: C.white, elevation: 1 }, detailFieldLabel: { color: '#A1A7A2', fontSize: 9 }, detailFieldValue: { color: C.ink, fontSize: 11, fontWeight: '600', marginTop: 5 }, expandButton: { minHeight: 35, marginHorizontal: 16, marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 9, backgroundColor: C.greenPale }, expandButtonText: { color: C.greenDark, fontSize: 11, fontWeight: '600' }, expandedDetails: { marginHorizontal: 16, marginTop: 8, padding: 10, borderRadius: 10, backgroundColor: C.white }, expandedLine: { color: '#727B74', fontSize: 10, lineHeight: 16 }, bold: { color: '#465047', fontWeight: '700' }, outputGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, paddingHorizontal: 16 }, outputCard: { position: 'relative', width: '48%', minHeight: 74, padding: 10, borderRadius: 11, backgroundColor: C.white, elevation: 1 }, outputLabel: { color: C.muted, fontSize: 9 }, outputValue: { color: C.ink, fontSize: 14, fontWeight: '700', marginTop: 6, paddingRight: 12 }, outputDot: { position: 'absolute', right: 9, bottom: 10, width: 10, height: 10, borderRadius: 6 }, detailSectionHeader: { marginHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, miniMap: { height: 170, marginHorizontal: 16, overflow: 'hidden', borderRadius: 11, backgroundColor: '#E9EEE6' }, miniMapMessage: { position: 'absolute', left: 10, right: 10, top: 10, padding: 9, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 8, backgroundColor: '#FFFFFFEE' }, miniMapText: { flex: 1, color: '#70796F', fontSize: 10 }, detailActions: { flexDirection: 'row', gap: 9, marginHorizontal: 16, marginTop: 11 },
+  detailScroll: { paddingBottom: 18 }, detailSummary: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 15, paddingBottom: 12 }, detailName: { color: C.ink, fontSize: 16, fontWeight: '700' }, detailId: { color: '#7E8780', fontSize: 10, marginTop: 3 }, detailHeard: { color: '#969D98', fontSize: 9, marginTop: 3 }, detailFields: { flexDirection: 'row', gap: 9, paddingHorizontal: 16 }, detailField: { minHeight: 58, flex: 1, padding: 10, borderRadius: 10, backgroundColor: C.white, elevation: 1 }, detailFieldLabel: { color: '#A1A7A2', fontSize: 9 }, detailFieldValue: { color: C.ink, fontSize: 11, fontWeight: '600', marginTop: 5 }, expandButton: { minHeight: 35, marginHorizontal: 16, marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 9, backgroundColor: C.greenPale }, expandButtonText: { color: C.greenDark, fontSize: 11, fontWeight: '600' }, expandedDetails: { marginHorizontal: 16, marginTop: 8, padding: 10, borderRadius: 10, backgroundColor: C.white }, expandedLine: { color: '#727B74', fontSize: 10, lineHeight: 16 }, bold: { color: '#465047', fontWeight: '700' }, outputGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, paddingHorizontal: 16 }, outputCard: { position: 'relative', width: '48%', minHeight: 74, padding: 10, borderRadius: 11, backgroundColor: C.white, elevation: 1 }, outputLabel: { color: C.muted, fontSize: 9 }, outputValue: { color: C.ink, fontSize: 14, fontWeight: '700', marginTop: 6, paddingRight: 12 }, outputDot: { position: 'absolute', right: 9, bottom: 10, width: 10, height: 10, borderRadius: 6 }, detailSectionHeader: { marginHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, miniMap: { height: 170, marginHorizontal: 16, overflow: 'hidden', borderRadius: 11, backgroundColor: '#FFFFFF' }, miniMapMessage: { position: 'absolute', left: 10, right: 10, top: 10, padding: 9, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 8, backgroundColor: '#FFFFFFEE' }, miniMapText: { flex: 1, color: '#70796F', fontSize: 10 }, detailActions: { flexDirection: 'row', gap: 9, marginHorizontal: 16, marginTop: 11 },
   profileFootnote: { marginTop: 14, color: '#A2A8A3', fontSize: 10, textAlign: 'center' },
   noticeDate: { marginHorizontal: 16, marginTop: 14, marginBottom: 7, color: '#8B938D', fontSize: 10, fontWeight: '700' }, noticeRow: { minHeight: 69, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E8ECE7', backgroundColor: C.white }, noticeImage: { width: 38, height: 38, borderRadius: 20 }, noticeTitle: { color: C.ink, fontSize: 11, fontWeight: '700' }, noticeLocation: { color: '#969D98', fontSize: 9, marginTop: 3 }, noticeTime: { alignItems: 'flex-end', gap: 4 }, noticeTimeText: { color: '#9AA19B', fontSize: 9 }, unreadCount: { minWidth: 17, height: 17, paddingHorizontal: 4, overflow: 'hidden', borderRadius: 9, backgroundColor: C.green, color: C.white, fontSize: 9, textAlign: 'center', textAlignVertical: 'center' },
   modalScrim: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#10171299' }, sheet: { maxHeight: '84%', paddingTop: 8, paddingHorizontal: 18, paddingBottom: Platform.OS === 'ios' ? 25 : 14, borderTopLeftRadius: 20, borderTopRightRadius: 20, backgroundColor: C.white }, sheetGrabber: { width: 36, height: 4, alignSelf: 'center', marginBottom: 13, borderRadius: 4, backgroundColor: '#D9DED8' }, sheetTitle: { color: C.ink, fontSize: 17, fontWeight: '700', textAlign: 'center' }, sheetSubtitle: { alignSelf: 'center', maxWidth: 300, marginTop: 5, marginBottom: 12, color: '#969D98', fontSize: 11, lineHeight: 16, textAlign: 'center' }, sheetContent: { flexShrink: 1 }, sheetActions: { flexDirection: 'row', gap: 9, marginTop: 12 }, optionRow: { minHeight: 49, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EEF0EC' }, optionTitle: { color: C.ink, fontSize: 12, fontWeight: '500' }, optionSubtitle: { color: C.muted, fontSize: 10, marginTop: 3 }, sheetEmpty: { padding: 15, color: C.muted, fontSize: 12, textAlign: 'center' }, jsonInput: { minHeight: 96, marginTop: 6, textAlignVertical: 'top', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 12 },
