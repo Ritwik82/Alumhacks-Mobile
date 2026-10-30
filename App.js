@@ -303,6 +303,7 @@ function AppContent() {
   const [downlinkPort, setDownlinkPort] = useState('1');
   const [downlinkClass, setDownlinkClass] = useState('C');
   const [downlinkKey, setDownlinkKey] = useState('');
+  const [downlinkFeedback, setDownlinkFeedbackState] = useState(null);
   const [organizationQuery, setOrganizationQuery] = useState('');
   const [automationRules, setAutomationRules] = useState(() => AUTO_RULE_SEED.map(rule => ({ ...rule })));
   const [automationSolution, setAutomationSolution] = useState('All');
@@ -314,6 +315,12 @@ function AppContent() {
   const [activeAutomationId, setActiveAutomationId] = useState(null);
   const mapRef = useRef(null);
   const refreshInFlightRef = useRef(false);
+  const downlinkFeedbackRef = useRef(null);
+  const setDownlinkFeedback = useCallback(nextOrUpdater => {
+    const next = typeof nextOrUpdater === 'function' ? nextOrUpdater(downlinkFeedbackRef.current) : nextOrUpdater;
+    downlinkFeedbackRef.current = next;
+    setDownlinkFeedbackState(next);
+  }, []);
   const client = useMemo(() => serverUrl ? new GinjerClient(serverUrl) : null, [serverUrl]);
   const isConnected = connectedToBackend && !demoMode;
   const hasTabs = ['devices', 'locations', 'analytics', 'profile'].includes(route);
@@ -326,6 +333,16 @@ function AppContent() {
     setToast(message);
     setTimeout(() => setToast(''), 2500);
   }, []);
+
+  useEffect(() => {
+    if (!downlinkFeedback || downlinkFeedback.status !== 'waiting') return undefined;
+    const timer = setTimeout(() => {
+      setDownlinkFeedback(current => current?.id === downlinkFeedback.id && current.status === 'waiting'
+        ? { ...current, status: 'failed', message: `Failed: No device response within ${current.timeoutLabel}. Check that the device is powered, online, and connected to the correct network.` }
+        : current);
+    }, Math.max(0, downlinkFeedback.deadline - Date.now()));
+    return () => clearTimeout(timer);
+  }, [downlinkFeedback, setDownlinkFeedback]);
 
   const fetchActiveProjectData = useCallback(() => {
     if (!client || !activeOrganisation || !activeProject) return Promise.resolve(null);
@@ -500,6 +517,13 @@ function AppContent() {
       try {
         const result = await fetchActiveProjectData();
         if (!mounted || !result) return;
+        const pendingDownlink = downlinkFeedbackRef.current;
+        if (pendingDownlink?.status === 'waiting') {
+          const refreshedDevice = result.devices.find(device => device.apiId === pendingDownlink.deviceApiId);
+          if (timestampMillis(refreshedDevice?.timestamp) > pendingDownlink.sentAt) {
+            setDownlinkFeedback({ ...pendingDownlink, status: 'responded', message: 'Device responded with fresh data after the command. Check its Outputs below to confirm the requested state.' });
+          }
+        }
         setDevices(result.devices); setModules(result.modules);
         setSelectedDevice(current => current ? result.devices.find(item => item.apiId === current.apiId) || result.devices[0] || null : result.devices[0] || null);
         setSelectedMapDevice(current => current ? result.devices.find(item => item.apiId === current.apiId) || null : null);
@@ -513,7 +537,7 @@ function AppContent() {
     const timer = setInterval(poll, 20000);
     const subscription = AppState.addEventListener('change', state => { if (state === 'active') poll(); });
     return () => { mounted = false; clearInterval(timer); subscription.remove(); };
-  }, [isConnected, client, activeOrganisation, activeProject, fetchActiveProjectData]);
+  }, [isConnected, client, activeOrganisation, activeProject, fetchActiveProjectData, setDownlinkFeedback]);
 
   const checkServer = async () => {
     const candidate = serverInput.trim().replace(/[./]+$/, '');
@@ -870,6 +894,7 @@ function AppContent() {
       <View style={styles.expandedDetails}><Text style={styles.expandedLine}>{device.loc}{coords ? ` · ${device.position.lat}, ${device.position.lng}` : ''}</Text></View>
       <View style={styles.detailActions}><ActionButton title="Refresh data" secondary onPress={refresh} />{isConnected && modules.some(item => item.moduleType === 'DOWNLINK_INTERFACE') ? <ActionButton title="Send Downlink" disabled={!isMongoObjectId(device.apiId)} onPress={() => { setDownlinkControllerValue(''); setDownlinkPort('1'); setDownlinkClass('C'); setDownlinkKey(''); setDownlinkModule(preferredDownlinkModule(device, modules)?._id || ''); setModal('downlink'); }} /> : null}</View>
       {isConnected && modules.some(item => item.moduleType === 'DOWNLINK_INTERFACE') && !isMongoObjectId(device.apiId) ? <Text style={styles.downlinkIdWarning}>Ginjer has not returned this device’s database ID. Refresh the device list before sending commands.</Text> : null}
+      {downlinkFeedback?.deviceApiId === device.apiId ? <View style={[styles.downlinkFeedback, downlinkFeedback.status === 'failed' ? styles.downlinkFeedbackFailed : downlinkFeedback.status === 'responded' ? styles.downlinkFeedbackResponded : styles.downlinkFeedbackWaiting]}><Icon name={downlinkFeedback.status === 'failed' ? 'alert-circle-outline' : downlinkFeedback.status === 'responded' ? 'check-circle-outline' : 'clock-outline'} size={18} color={downlinkFeedback.status === 'failed' ? C.red : downlinkFeedback.status === 'responded' ? C.greenDark : C.amber} /><Text style={[styles.downlinkFeedbackText, downlinkFeedback.status === 'failed' ? styles.downlinkFeedbackTextFailed : downlinkFeedback.status === 'responded' ? styles.downlinkFeedbackTextResponded : styles.downlinkFeedbackTextWaiting]}>{downlinkFeedback.message}</Text></View> : null}
     </ScrollView>;
   };
 
@@ -988,21 +1013,37 @@ function AppContent() {
       const relayController = /relay|lt\s*io\s*controller/i.test(`${selectedDevice?.name || ''} ${selectedDevice?.hardwareType || ''} ${selectedDevice?.outputs?.map(output => output.outputName || output.label || '').join(' ') || ''}`);
       const send = async () => {
         if (demoMode || !isConnected || !client) { showToast('Downlinks are available only for a live Ginjer device.'); setModal(null); return; }
-        if (!isMongoObjectId(selectedDevice?.apiId)) { showToast('Ginjer device ID is missing or invalid. Refresh the live device list and select the device again.'); return; }
-        if (!downlinkModule || !interfaces.some(item => item._id === downlinkModule)) { showToast('Select a live downlink interface from Ginjer.'); return; }
+        if (!isMongoObjectId(selectedDevice?.apiId)) { showToast('Failed: Ginjer device ID is missing or invalid. Refresh the live device list and select the device again.'); return; }
+        if (!isMongoObjectId(selectedDevice?.projectId)) { showToast('Failed: Ginjer project ID is missing or invalid. Refresh the project and device list.'); return; }
+        if (!downlinkModule || !interfaces.some(item => item._id === downlinkModule)) { showToast('Failed: Select a live downlink interface from Ginjer.'); return; }
         const port = Number(downlinkPort);
-        if (!downlinkControllerValue.trim()) { showToast('Enter the controller value.'); return; }
-        if (!Number.isInteger(port) || port < 1 || port > 223) { showToast('Downlink port must be a whole number from 1 to 223.'); return; }
-        if (!downlinkKey.trim()) { showToast('Enter the downlink key configured in Ginjer.'); return; }
+        if (!downlinkControllerValue.trim()) { showToast('Failed: Enter the controller value.'); return; }
+        if (!Number.isInteger(port) || port < 1 || port > 223) { showToast('Failed: Downlink port must be a whole number from 1 to 223.'); return; }
+        if (!downlinkKey.trim()) { showToast('Failed: Enter the downlink key configured in Ginjer.'); return; }
         const value = { value: downlinkControllerValue.trim(), port, class: downlinkClass, key: downlinkKey.trim() };
+        const requestId = `${selectedDevice.apiId}-${Date.now()}`;
+        const timeoutMs = downlinkClass === 'C' ? 60_000 : 300_000;
+        setDownlinkFeedback({ id: requestId, status: 'sending', deviceApiId: selectedDevice.apiId, message: 'Sending command to Ginjer…' });
         setLoading(true);
         try {
-          const result = await client.sendDownlink(activeOrganisation, selectedDevice, downlinkModule, value);
+          let timeoutHandle;
+          const result = await Promise.race([
+            client.sendDownlink(activeOrganisation, selectedDevice, downlinkModule, value),
+            new Promise((_, reject) => { timeoutHandle = setTimeout(() => reject(new Error('Ginjer did not respond to the downlink request within 15 seconds.')), 15_000); }),
+          ]).finally(() => clearTimeout(timeoutHandle));
           const receipt = result.sendDownlink;
           if (!receipt) throw new Error('Ginjer returned no downlink receipt. Check the device and payload before retrying.');
+          if (/^(error|failed|failure|rejected)$/i.test(String(receipt.type || '').trim())) throw new Error(receipt.message || 'Ginjer rejected the downlink.');
+          const sentAt = Date.now();
+          setDownlinkFeedback({ id: requestId, status: 'waiting', deviceApiId: selectedDevice.apiId, sentAt, deadline: sentAt + timeoutMs, timeoutLabel: timeoutMs === 60_000 ? '60 seconds' : '5 minutes', message: 'Ginjer accepted the command. Waiting for a fresh device response…' });
           setModal(null);
-          showToast(`${receipt.message || 'Downlink submitted to Ginjer.'} Device execution is not confirmed until its next uplink.`);
-        } catch (error) { showToast(error.message); }
+          showToast('Command sent. Waiting for the device to respond.');
+        } catch (error) {
+          const message = `Failed: ${error.message || 'The command could not be sent.'}`;
+          setDownlinkFeedback({ id: requestId, status: 'failed', deviceApiId: selectedDevice.apiId, message });
+          setModal(null);
+          showToast(message);
+        }
         finally { setLoading(false); }
       };
       return <Sheet visible title="Send Downlink" subtitle={`Live device: ${selectedDevice?.name || '—'} · Device ID ${selectedDevice?.id || selectedDevice?.devEui || selectedDevice?.hardwareId || 'unavailable'}`} onClose={() => setModal(null)} actions={<><ActionButton title="Cancel" secondary onPress={() => setModal(null)} /><ActionButton title={loading ? 'Sending…' : 'Send'} disabled={loading || !interfaces.length} onPress={send} /></>}>
@@ -1060,6 +1101,13 @@ function formatUpdatedAt(timestamp) {
   if (seconds < 60) return `Updated ${seconds}s ago`;
   return `Updated ${Math.floor(seconds / 60)}m ago`;
 }
+function timestampMillis(value) {
+  if (value == null || value === '') return 0;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric < 1e12 ? numeric * 1000 : numeric;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 const styles = StyleSheet.create({
   flex: { flex: 1 }, safeArea: { flex: 1, backgroundColor: C.canvas }, appBody: { flex: 1, minHeight: 0 }, screen: { flex: 1, backgroundColor: C.canvas },
@@ -1084,6 +1132,7 @@ const styles = StyleSheet.create({
   loginPasswordShell: { position: 'relative', justifyContent: 'center' }, loginPasswordInput: { paddingRight: 48 }, passwordVisibilityButton: { position: 'absolute', right: 10, width: 36, height: 42, alignItems: 'center', justifyContent: 'center' }, authModeLink: { alignSelf: 'center', marginTop: 12, padding: 6 }, authModeLinkText: { color: C.greenDark, fontSize: 13, fontWeight: '600' },
   deviceProject: { color: C.greenDark, fontSize: 9, fontWeight: '600', marginTop: 3 },
   downlinkIdWarning: { marginHorizontal: 16, marginTop: 6, color: C.red, fontSize: 10, lineHeight: 14 },
+  downlinkFeedback: { marginHorizontal: 16, marginTop: 10, padding: 11, flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 10 }, downlinkFeedbackFailed: { backgroundColor: C.redPale }, downlinkFeedbackResponded: { backgroundColor: C.greenPale }, downlinkFeedbackWaiting: { backgroundColor: C.amberPale }, downlinkFeedbackText: { flex: 1, fontSize: 11, lineHeight: 16 }, downlinkFeedbackTextFailed: { color: C.red }, downlinkFeedbackTextResponded: { color: C.greenDark }, downlinkFeedbackTextWaiting: { color: '#8A681B' },
   downlinkFieldsRow: { flexDirection: 'row', gap: 10 }, downlinkClassRow: { minHeight: 44, marginTop: 6, padding: 3, flexDirection: 'row', gap: 3, borderWidth: 1, borderColor: C.line, borderRadius: 10, backgroundColor: C.white }, downlinkClassOption: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 7 }, downlinkClassOptionSelected: { backgroundColor: C.greenPale }, downlinkClassText: { color: C.muted, fontSize: 11 }, downlinkClassTextSelected: { color: C.greenDark, fontWeight: '700' },
   automationBreadcrumb: { minHeight: 35, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 5 }, automationBreadcrumbText: { maxWidth: 120, color: C.muted, fontSize: 10 }, automationBreadcrumbCurrent: { flexShrink: 1, color: C.greenDark, fontSize: 10, fontWeight: '700' },
   automationFilters: { minHeight: 45, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 7 }, automationFilter: { minHeight: 40, flex: 1, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 4, borderWidth: 1, borderColor: C.line, borderRadius: 10, backgroundColor: C.white }, automationFilterText: { flex: 1, minWidth: 0 }, automationFilterLabel: { color: C.greenDark, fontSize: 8, fontWeight: '700' }, automationFilterValue: { color: C.ink, fontSize: 11, marginTop: 1 },
