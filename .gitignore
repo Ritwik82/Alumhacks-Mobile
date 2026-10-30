@@ -1,5 +1,6 @@
 node_modules/
 .expo/
+dist/
 work/
 *.log
 .env
@@ -11,3 +12,4 @@ AGENTS.md
 Start Alumhacks.bat
 assets/reference/device-detail-map.png
 assets/reference/locations-map.png
+

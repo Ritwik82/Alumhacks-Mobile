@@ -9,6 +9,7 @@ const queries = {
 };
 
 const asArray = value => Array.isArray(value) ? value : value ? [value] : [];
+export const isMongoObjectId = value => typeof value === 'string' && /^[a-f\d]{24}$/i.test(value);
 const flattenDevices = projects => asArray(projects).flatMap(project =>
   asArray(project.clusters).flatMap(cluster =>
     asArray(cluster.devices).map(device => ({ ...device, clusterName: cluster.name })),
@@ -57,6 +58,7 @@ export function normalizeDevice(device) {
     position,
     networkId: device.networkId || '',
     hardwareType: device.hardwareType || '',
+    macAddress: device.macAddress || '',
   };
 }
 
@@ -164,6 +166,9 @@ export class GinjerClient {
   }
 
   async sendDownlink(organisation, device, moduleId, value) {
+    if (!isMongoObjectId(device?.apiId)) throw new Error('Ginjer did not return a valid device database ID. Refresh the live device list and select the device again; MAC address and DevEUI are not accepted here.');
+    if (!isMongoObjectId(moduleId)) throw new Error('Select a valid DOWNLINK_INTERFACE module returned by Ginjer.');
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('The controller command must be a JSON object.');
     return this.request(queries.downlink, {
       action: { organisationId: organisation.organisationId, deviceId: device.apiId, downlinkInterfaceId: moduleId, value },
     });
