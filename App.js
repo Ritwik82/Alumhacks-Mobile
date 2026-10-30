@@ -259,7 +259,7 @@ export default function App() {
 }
 
 function AppContent() {
-  const [serverInput, setServerInput] = useState('');
+  const [serverInput, setServerInput] = useState('http://172.22.64.81:8787');
   const [serverUrl, setServerUrl] = useState('');
   const [connectedToBackend, setConnectedToBackend] = useState(false);
   const [setupError, setSetupError] = useState('');
@@ -647,7 +647,7 @@ function AppContent() {
         <Text style={styles.kicker}>ALUMHACKS MOBILE</Text>
         <Text style={styles.screenHeading}>Connect to your computer</Text>
         <Text style={styles.bodyCopy}>Start the Alumhacks backend on your computer. Enter its “Phone on the same Wi-Fi” address here.</Text>
-        <TextInput value={serverInput} onChangeText={setServerInput} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="http://192.168.1.20:8787" placeholderTextColor="#A0A6A1" style={styles.textInput} onSubmitEditing={checkServer} accessibilityLabel="Backend server URL" />
+        <TextInput value={serverInput} onChangeText={setServerInput} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="http://172.22.64.81:8787" placeholderTextColor="#A0A6A1" style={styles.textInput} onSubmitEditing={checkServer} accessibilityLabel="Backend server URL" />
         {setupError ? <Text style={styles.errorText}>{setupError}</Text> : null}
         <ActionButton title={loading ? 'Connecting…' : 'Open Alumhacks'} disabled={loading} onPress={checkServer} />
         <Text style={styles.footnote}>Keep your phone and computer on the same trusted Wi-Fi network.</Text>
