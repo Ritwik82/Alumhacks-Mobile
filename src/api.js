@@ -147,6 +147,8 @@ export const demoDevices = [
   { name: 'IO Controller', id: 'ECFAF44694729A', heard: '02 Feb 2024 02:25', chips: [{ label: 'ON', status: 'green' }, { label: 'Full', status: 'green' }], kind: 'controller', loc: 'Lab Room', output: 'Lab Room', outputs: [], position: { lat: 28.5492, lng: 77.2528, placeName: 'Lab Room' } },
   { name: 'Panic Button', id: 'ECFAF44694729B', heard: '02 Feb 2024 02:15', chips: [{ label: 'SOS', status: 'red' }, { label: 'Low', status: 'amber' }], kind: 'alert', loc: 'John Doe · Block B', output: 'Block B, level 2', outputs: [], position: { lat: 28.5244, lng: 77.2167, placeName: 'John Doe · Block B' } },
   { name: 'Air Quality Sensor', id: 'ECFAF4469472CC', heard: '02 Feb 2024 01:43', chips: [{ label: 'Poor', status: 'red' }, { label: 'Full', status: 'green' }], kind: 'air', loc: 'Saket', output: 'Saket Office', outputs: [], position: { lat: 28.6315, lng: 77.2167, placeName: 'Saket' } },
+  { name: 'Tektelic Sensor', id: 'T0005983-D01', heard: '12 Mins', chips: [{ label: 'LoRaWAN', status: 'green' }, { label: 'Online', status: 'green' }], kind: 'tektelic', loc: 'Tower A · Roof', output: 'Telemetry Feed', outputs: [], position: { lat: 28.5601, lng: 77.2105, placeName: 'Tower A · Roof' } },
+  { name: 'Agriculture Node', id: 'AGRI-SEN-089', heard: '5 Mins', chips: [{ label: 'Moisture: 42%', status: 'green' }, { label: 'Battery: 91%', status: 'green' }], kind: 'agriculture', loc: 'Agri Zone 3', output: 'Soil Probe', outputs: [], position: { lat: 28.5350, lng: 77.2250, placeName: 'Agri Zone 3' } },
 ];
 
 export const demoNotices = [
