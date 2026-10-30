@@ -4,7 +4,7 @@ const http = require('node:http');
 const os = require('node:os');
 
 const PORT = Number(process.env.ALUMHACKS_PORT || 8787);
-const GINJER_URL = 'https://prodapi.ginjer.io/graphql';
+const GINJER_URL = String(process.env.GINJER_GRAPHQL_URL || 'https://devapi.ginjer.io/graphql').replace(/\/+$/, '');
 const TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
 
 let ginjerToken = '';
@@ -168,3 +168,4 @@ server.listen(PORT, '0.0.0.0', () => {
   process.stdout.write('LAN access is limited to private IPv4 networks. Use only on a trusted Wi-Fi network.\n');
   process.stdout.write('Token storage is memory-only and expires after 8 hours. Press Ctrl+C to stop.\n');
 });
+
