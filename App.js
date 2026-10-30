@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   BackHandler,
   Image,
   KeyboardAvoidingView,
@@ -11,6 +12,7 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -87,6 +89,28 @@ const POPULAR_PLACES = {
   gurugram: { latitude: 28.4595, longitude: 77.0266, name: 'Gurugram, Haryana' },
 };
 
+
+
+const QUICK_COMMANDS = [
+  { label: 'Turn ON',    icon: 'power',               value: { action: 'on' },        color: '#82AE25' },
+  { label: 'Turn OFF',   icon: 'power-off',            value: { action: 'off' },       color: '#E9685E' },
+  { label: 'Ping',       icon: 'access-point-check',   value: { action: 'ping' },      color: '#38A1C5' },
+  { label: 'Reset',      icon: 'restart',              value: { action: 'reset' },     color: '#E5AE37' },
+  { label: 'Buzzer ON',  icon: 'volume-high',          value: { action: 'buzzer_on' }, color: '#E5AE37' },
+  { label: 'Buzzer OFF', icon: 'volume-off',           value: { action: 'buzzer_off'}, color: '#858D87' },
+];
+
+const DEMO_AUTOMATION_RULES = [
+  { id: 'r1', name: 'High Fill Alert → Notify', trigger: 'Level > 85%',     action: 'Push notification', active: true,  icon: 'water-alert', color: '#38A1C5' },
+  { id: 'r2', name: 'Low Battery → Reset',      trigger: 'Battery < 15%',   action: 'Send Downlink: reset', active: true, icon: 'battery-alert', color: '#E5AE37' },
+  { id: 'r3', name: 'Device Offline > 1hr',     trigger: 'No heartbeat 1h', action: 'Banner Alert',      active: false, icon: 'wifi-off',     color: '#E9685E' },
+  { id: 'r4', name: 'SOS Button Pressed',       trigger: 'Alert payload',   action: 'Notify + Log',      active: true,  icon: 'alarm-light',  color: '#E9685E' },
+];
+
+const DEMO_SCHEDULES = [
+  { id: 's1', name: 'Daily Ping All', time: '08:00 AM', repeat: 'Every day',   icon: 'clock-outline',    color: '#38A1C5' },
+  { id: 's2', name: 'Night Buzzer OFF', time: '11:00 PM', repeat: 'Mon–Fri',   icon: 'volume-off',       color: '#858D87' },
+];
 
 function IconButton({ name, onPress, label, style, color = C.muted, size = 21 }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={8} style={[styles.iconButton, style]}><Icon name={name} size={size} color={color} /></Pressable>;
@@ -174,10 +198,24 @@ function DeviceCard({ device, onPress }) {
   </Pressable>;
 }
 
+
+function DeviceCardCompact({ device, onPress }) {
+  const statusColor = device.chips?.[0]?.status === 'red' ? C.red : device.chips?.[0]?.status === 'amber' ? C.amber : C.green;
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={device.name} onPress={onPress} style={({ pressed }) => [styles.deviceCardCompact, pressed && styles.pressed]}>
+      <View style={[styles.compactDot, { backgroundColor: statusColor }]} />
+      <DeviceThumb kind={device.kind} size={34} />
+      <Text numberOfLines={1} style={[styles.deviceName, { flex: 1, fontSize: 13, marginLeft: 6 }]}>{device.name}</Text>
+      <StatusChip label={device.chips?.[0]?.label || 'OK'} status={device.chips?.[0]?.status || 'green'} />
+      <Icon name="chevron-right" color={C.green} size={18} />
+    </Pressable>
+  );
+}
+
 function BottomTabs({ current, onChange }) {
   const items = [
     ['devices', 'Devices', 'view-dashboard-outline'], ['locations', 'Locations', 'map-marker-radius-outline'],
-    ['analytics', 'Analytics', 'chart-box-outline'], ['profile', 'Profile', 'account-outline'],
+    ['automation', 'Automation', 'robot-outline'], ['profile', 'Profile', 'account-outline'],
   ];
   return <SafeAreaView edges={['bottom']} style={styles.tabSafeArea}>
     <View style={styles.bottomTabs}>
@@ -253,10 +291,16 @@ function AppContent() {
   const [toast, setToast] = useState('');
   const [downlinkValue, setDownlinkValue] = useState('{}');
   const [downlinkModule, setDownlinkModule] = useState('');
+  const [deviceView, setDeviceView] = useState('expanded');
+  const [bannerNotice, setBannerNotice] = useState(null);
+  const [downlinkSending, setDownlinkSending] = useState(false);
+  const [downlinkSent, setDownlinkSent] = useState(false);
+  const [autoRules, setAutoRules] = useState(DEMO_AUTOMATION_RULES.map(r => ({ ...r })));
+  const sendAnim = useRef(new Animated.Value(0)).current;
   const mapRef = useRef(null);
   const client = useMemo(() => serverUrl ? new GinjerClient(serverUrl) : null, [serverUrl]);
   const isConnected = connectedToBackend && !demoMode;
-  const hasTabs = ['devices', 'locations', 'analytics', 'profile'].includes(route);
+  const hasTabs = ['devices', 'locations', 'automation', 'profile'].includes(route);
   const positionableDevices = useMemo(() => {
     const withCoords = devices.filter(hasCoordinates);
     return withCoords.length > 0 ? withCoords : demoDevices.filter(hasCoordinates);
@@ -364,6 +408,36 @@ function AppContent() {
     showToast(`No location found for "${q}".`);
   }, [query, positionableDevices, showToast]);
 
+
+  const sendQuickDownlink = useCallback(async (cmd) => {
+    setDownlinkSending(true);
+    setDownlinkSent(false);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(sendAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(sendAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    try {
+      if (isConnected && client && selectedDevice?.apiId) {
+        await client.sendDownlink(activeOrganisation, selectedDevice, downlinkModule, cmd.value);
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      loop.stop();
+      sendAnim.setValue(0);
+      setDownlinkSending(false);
+      setDownlinkSent(true);
+      setTimeout(() => { setDownlinkSent(false); setModal(null); }, 1200);
+    } catch (error) {
+      loop.stop();
+      sendAnim.setValue(0);
+      setDownlinkSending(false);
+      showToast(error.message || 'Downlink failed.');
+    }
+  }, [isConnected, client, selectedDevice, activeOrganisation, downlinkModule, sendAnim, showToast]);
+
   const pickImage = useCallback(async () => {
     try {
       let permission = await ImagePicker.getMediaLibraryPermissionsAsync();
@@ -422,6 +496,11 @@ function AppContent() {
     }, 300);
     return () => clearTimeout(timer);
   }, [route, positionableDevices, selectedMapDevice]);
+
+  useEffect(() => {
+    const critical = demoNotices.find(n => n.color === 'red');
+    if (critical) setBannerNotice(critical);
+  }, []);
 
   const checkServer = async () => {
     const candidate = serverInput.trim().replace(/[./]+$/, '');
@@ -607,6 +686,7 @@ function AppContent() {
     <View style={styles.listTopBar}>
       <Text style={styles.sectionTitle}>Devices</Text>
       <View style={styles.topActions}>
+        <IconButton name={deviceView === 'expanded' ? 'view-list' : 'view-module'} label="Toggle view" onPress={() => setDeviceView(v => v === 'expanded' ? 'compact' : 'expanded')} color={C.ink} />
         <IconButton name="bell-outline" label="Notifications" onPress={() => { setPreviousRoute(route); setRoute('notifications'); }} color={C.ink} />
         <IconButton name="filter-variant" label="Filter devices" onPress={() => setModal('filter')} color={C.ink} />
       </View>
@@ -619,7 +699,7 @@ function AppContent() {
     <SearchField value={query} onChangeText={setQuery} style={{ marginHorizontal: 16, marginTop: 12 }} />
     <View style={styles.listSummary}><Text style={styles.summaryText}>{filteredDevices.length} devices</Text><Text style={styles.summaryText}>Updated just now</Text></View>
     <ScrollView contentContainerStyle={styles.deviceList} keyboardShouldPersistTaps="handled">
-      {filteredDevices.length ? filteredDevices.map((device, index) => <DeviceCard key={device.apiId || device.id || index} device={device} onPress={() => goToDevice(device)} />) : <View style={styles.emptyBox}><Icon name="devices" size={28} color="#A4AAA5" /><Text style={styles.emptyText}>No devices match this search.</Text></View>}
+      {filteredDevices.length ? filteredDevices.map((device, index) => deviceView === 'compact' ? <DeviceCardCompact key={device.apiId || device.id || index} device={device} onPress={() => goToDevice(device)} /> : <DeviceCard key={device.apiId || device.id || index} device={device} onPress={() => goToDevice(device)} />) : <View style={styles.emptyBox}><Icon name="devices" size={28} color="#A4AAA5" /><Text style={styles.emptyText}>No devices match this search.</Text></View>}
       <Pressable onPress={() => { setPreviousRoute(route); setRoute('notifications'); }} style={styles.notificationsLink}><Icon name="bell-badge-outline" size={17} color={C.greenDark} /><Text style={styles.notificationsLinkText}>View notifications</Text><Icon name="chevron-right" size={18} color={C.muted} /></Pressable>
     </ScrollView>
   </View>;
@@ -736,11 +816,77 @@ function AppContent() {
       <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
         {notices.map((notice, index) => <View key={`${notice.title}-${index}`}>
           {(index === 0 || (index === 4 && notices.length > 4)) ? <Text style={styles.noticeDate}>{index === 0 ? 'Today' : 'Earlier'}</Text> : null}
-          <View style={styles.noticeRow}><Image source={NOTICE_IMAGES[notice.icon]} style={styles.noticeImage} resizeMode="cover" /><View style={{ flex: 1 }}><Text style={styles.noticeTitle}>{notice.title}</Text><Text style={styles.noticeLocation}>{notice.where}</Text></View><View style={styles.noticeTime}>{notice.count ? <Text style={styles.unreadCount}>{notice.count}</Text> : null}<Text style={styles.noticeTimeText}>{notice.time}</Text></View></View>
+          <Pressable style={({ pressed }) => [styles.noticeRow, pressed && styles.pressed]} onPress={() => { const dev = devices.find(d => d.loc && notice.where && (d.loc.toLowerCase().includes(notice.where.toLowerCase()) || notice.where.toLowerCase().includes(d.name.toLowerCase()))); if (dev) goToDevice(dev, 'notifications'); else showToast('No linked device found for this alert.'); }}><Image source={NOTICE_IMAGES[notice.icon]} style={styles.noticeImage} resizeMode="cover" /><View style={{ flex: 1 }}><Text style={styles.noticeTitle}>{notice.title}</Text><Text style={styles.noticeLocation}>{notice.where}</Text></View><View style={styles.noticeTime}>{notice.count ? <Text style={styles.unreadCount}>{notice.count}</Text> : null}<Text style={styles.noticeTimeText}>{notice.time}</Text></View></Pressable>
         </View>)}
         {!notices.length ? <EmptyState text="No notifications match this filter." /> : null}
       </ScrollView>
     </View>;
+  };
+
+
+  const renderAutomation = () => {
+    const alertCount = devices.filter(d => d.chips?.some(c => c.status === 'red')).length;
+    return (
+      <ScrollView style={styles.screen} contentContainerStyle={styles.standardScroll}>
+        <Text style={[styles.sectionTitle, { marginBottom: 12 }]}>Automation</Text>
+        <View style={styles.autoSummaryRow}>
+          <View style={[styles.autoSummaryCard, { backgroundColor: '#EAF6FA' }]}>
+            <Icon name="devices" size={20} color={C.blue} />
+            <Text style={[styles.autoSummaryVal, { color: C.blue }]}>{devices.length}</Text>
+            <Text style={styles.autoSummaryLabel}>Devices</Text>
+          </View>
+          <View style={[styles.autoSummaryCard, { backgroundColor: C.redPale }]}>
+            <Icon name="alert-circle-outline" size={20} color={C.red} />
+            <Text style={[styles.autoSummaryVal, { color: C.red }]}>{alertCount}</Text>
+            <Text style={styles.autoSummaryLabel}>Alerts</Text>
+          </View>
+          <View style={[styles.autoSummaryCard, { backgroundColor: C.greenPale }]}>
+            <Icon name="robot-outline" size={20} color={C.greenDark} />
+            <Text style={[styles.autoSummaryVal, { color: C.greenDark }]}>{autoRules.filter(r => r.active).length}</Text>
+            <Text style={styles.autoSummaryLabel}>Active Rules</Text>
+          </View>
+        </View>
+
+        <Text style={styles.sectionTitleSmall}>Automation Rules</Text>
+        {autoRules.map(rule => (
+          <View key={rule.id} style={styles.autoRuleCard}>
+            <View style={[styles.autoRuleIcon, { backgroundColor: rule.color + '22' }]}>
+              <Icon name={rule.icon} size={19} color={rule.color} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text numberOfLines={1} style={styles.autoRuleName}>{rule.name}</Text>
+              <Text numberOfLines={1} style={styles.autoRuleMeta}>{rule.trigger} → {rule.action}</Text>
+            </View>
+            <Switch
+              value={rule.active}
+              onValueChange={(val) => setAutoRules(prev => prev.map(r => r.id === rule.id ? { ...r, active: val } : r))}
+              trackColor={{ false: '#D0D5CF', true: C.green }}
+              thumbColor={C.white}
+            />
+          </View>
+        ))}
+
+        <Text style={styles.sectionTitleSmall}>Scheduled Actions</Text>
+        {DEMO_SCHEDULES.map(sch => (
+          <View key={sch.id} style={styles.autoRuleCard}>
+            <View style={[styles.autoRuleIcon, { backgroundColor: sch.color + '22' }]}>
+              <Icon name={sch.icon} size={19} color={sch.color} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text numberOfLines={1} style={styles.autoRuleName}>{sch.name}</Text>
+              <Text numberOfLines={1} style={styles.autoRuleMeta}>{sch.time} · {sch.repeat}</Text>
+            </View>
+            <Icon name="chevron-right" size={18} color={C.muted} />
+          </View>
+        ))}
+
+        <Pressable style={styles.autoAnalyticsLink} onPress={() => setRoute('analytics')}>
+          <Icon name="chart-box-outline" size={18} color={C.greenDark} />
+          <Text style={styles.autoAnalyticsText}>View Analytics Dashboard</Text>
+          <Icon name="chevron-right" size={18} color={C.muted} />
+        </Pressable>
+      </ScrollView>
+    );
   };
 
   const renderEdit = () => <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -761,6 +907,7 @@ function AppContent() {
     if (route === 'locations') return renderLocations();
     if (route === 'map') return renderMap(true);
     if (route === 'analytics') return renderAnalytics();
+    if (route === 'automation') return renderAutomation();
     if (route === 'profile') return renderProfile();
     if (route === 'notifications') return renderNotifications();
     if (route === 'detail') return renderDetail();
@@ -785,26 +932,46 @@ function AppContent() {
       </Sheet>;
     }
     if (modal === 'downlink') {
-      const interfaces = modules.filter(module => module.moduleType === 'DOWNLINK_INTERFACE');
-      const send = async () => {
-        if (!isConnected || !client || !selectedDevice?.apiId) { showToast('Connect to Ginjer and select a live device before sending a downlink.'); setModal(null); return; }
-        let value;
-        try { value = JSON.parse(downlinkValue); if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Enter a JSON object.'); }
-        catch (error) { showToast(error.message); return; }
-        setLoading(true);
-        try {
-          const result = await client.sendDownlink(activeOrganisation, selectedDevice, downlinkModule, value);
-          setModal(null); showToast(result.sendDownlink?.message || 'Ginjer accepted the downlink request.');
-        } catch (error) { showToast(error.message); }
-        finally { setLoading(false); }
-      };
-      return <Sheet visible title="Send Downlink" subtitle={`Enter a JSON command for ${selectedDevice?.name || 'this device'}.`} onClose={() => setModal(null)} actions={<><ActionButton title="Cancel" secondary onPress={() => setModal(null)} /><ActionButton title={loading ? 'Sending…' : 'Send'} disabled={loading || !interfaces.length} onPress={send} /></>}>
-        <Text style={styles.fieldLabel}>Downlink interface</Text>
-        {interfaces.length ? interfaces.map(item => <OptionRow key={item._id} title={item.label || item._id} selected={downlinkModule === item._id} onPress={() => setDownlinkModule(item._id)} radio />) : <Text style={styles.sheetEmpty}>No downlink interface is available for this organization.</Text>}
-        <Text style={[styles.fieldLabel, { marginTop: 14 }]}>JSON value</Text>
-        <TextInput value={downlinkValue} onChangeText={setDownlinkValue} multiline autoCapitalize="none" autoCorrect={false} style={[styles.textInput, styles.jsonInput]} accessibilityLabel="JSON downlink value" />
-        {!isConnected ? <Text style={styles.footnote}>Connect to Ginjer to send a real device command.</Text> : null}
-      </Sheet>;
+      const pulseOpacity = sendAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] });
+      const pulseScale = sendAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1.08] });
+      return (
+        <Sheet visible title="Send Downlink" subtitle={`2-tap quick commands for ${selectedDevice?.name || 'this device'}`} onClose={() => { if (!downlinkSending) { setDownlinkSent(false); setModal(null); } }}>
+          {downlinkSent ? (
+            <View style={styles.downlinkSuccessBox}>
+              <Icon name="check-circle" size={48} color={C.green} />
+              <Text style={styles.downlinkSuccessText}>Command Dispatched!</Text>
+            </View>
+          ) : downlinkSending ? (
+            <View style={styles.downlinkSuccessBox}>
+              <Animated.View style={{ opacity: pulseOpacity, transform: [{ scale: pulseScale }] }}>
+                <Icon name="radio-tower" size={50} color={C.greenDark} />
+              </Animated.View>
+              <Text style={[styles.downlinkSuccessText, { color: C.muted }]}>Sending command…</Text>
+            </View>
+          ) : (
+            <>
+              <Text style={[styles.fieldLabel, { marginBottom: 8 }]}>Quick Presets (Tap to send)</Text>
+              <View style={styles.quickCmdGrid}>
+                {QUICK_COMMANDS.map(cmd => (
+                  <Pressable key={cmd.label} onPress={() => sendQuickDownlink(cmd)} style={({ pressed }) => [styles.quickCmdButton, pressed && styles.pressed, { borderColor: cmd.color + '55' }]}>
+                    <View style={[styles.quickCmdIcon, { backgroundColor: cmd.color + '18' }]}>
+                      <Icon name={cmd.icon} size={24} color={cmd.color} />
+                    </View>
+                    <Text style={[styles.quickCmdLabel, { color: cmd.color }]}>{cmd.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={[styles.sectionTitleSmall, { marginTop: 14 }]}>Advanced (Raw JSON)</Text>
+              <TextInput value={downlinkValue} onChangeText={setDownlinkValue} multiline autoCapitalize="none" autoCorrect={false} style={[styles.textInput, styles.jsonInput, { marginBottom: 8 }]} accessibilityLabel="JSON downlink value" />
+              {!isConnected ? <Text style={styles.footnote}>Demo mode — command simulation with live animation.</Text> : null}
+              <View style={styles.sheetActions}>
+                <ActionButton title="Cancel" secondary onPress={() => setModal(null)} />
+                <ActionButton title="Send JSON" onPress={() => { let v; try { v = JSON.parse(downlinkValue); } catch { showToast('Invalid JSON.'); return; } sendQuickDownlink({ label: 'JSON', icon: 'code-json', value: v, color: C.blue }); }} />
+              </View>
+            </>
+          )}
+        </Sheet>
+      );
     }
     return null;
   };
@@ -814,6 +981,18 @@ function AppContent() {
 
   return <SafeAreaView edges={hasTabs ? ['top'] : ['top', 'bottom']} style={styles.safeArea}>
     <StatusBar barStyle="dark-content" backgroundColor={route === 'locations' || route === 'map' ? '#F8FAF5' : C.canvas} />
+    {bannerNotice && hasTabs ? (
+      <Pressable style={[styles.banner, { backgroundColor: bannerNotice.color === 'red' ? C.red : C.amber }]} onPress={() => { setBannerNotice(null); const dev = devices.find(d => d.loc && (d.loc.toLowerCase().includes((bannerNotice.where || '').toLowerCase()) || (bannerNotice.where || '').toLowerCase().includes(d.name.toLowerCase()))); if (dev) goToDevice(dev, tab); }}>
+        <Icon name="alert-circle-outline" size={20} color={C.white} />
+        <View style={{ flex: 1, marginLeft: 8 }}>
+          <Text style={styles.bannerTitle} numberOfLines={1}>{bannerNotice.title}</Text>
+          <Text style={styles.bannerSub} numberOfLines={1}>{bannerNotice.where} · Tap to route to device</Text>
+        </View>
+        <Pressable onPress={() => setBannerNotice(null)} hitSlop={12} style={styles.bannerClose}>
+          <Icon name="close" size={17} color={C.white} />
+        </Pressable>
+      </Pressable>
+    ) : null}
     <View style={styles.appBody}>{renderBody()}</View>
     {hasTabs ? <BottomTabs current={tab} onChange={changeTab} /> : null}
     {toast ? <View pointerEvents="none" style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
@@ -861,4 +1040,27 @@ const styles = StyleSheet.create({
   noticeDate: { marginHorizontal: 16, marginTop: 14, marginBottom: 7, color: '#8B938D', fontSize: 10, fontWeight: '700' }, noticeRow: { minHeight: 69, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E8ECE7', backgroundColor: C.white }, noticeImage: { width: 38, height: 38, borderRadius: 20 }, noticeTitle: { color: C.ink, fontSize: 11, fontWeight: '700' }, noticeLocation: { color: '#969D98', fontSize: 9, marginTop: 3 }, noticeTime: { alignItems: 'flex-end', gap: 4 }, noticeTimeText: { color: '#9AA19B', fontSize: 9 }, unreadCount: { minWidth: 17, height: 17, paddingHorizontal: 4, overflow: 'hidden', borderRadius: 9, backgroundColor: C.green, color: C.white, fontSize: 9, textAlign: 'center', textAlignVertical: 'center' },
   modalScrim: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#10171299' }, sheet: { maxHeight: '84%', paddingTop: 8, paddingHorizontal: 18, paddingBottom: Platform.OS === 'ios' ? 25 : 14, borderTopLeftRadius: 20, borderTopRightRadius: 20, backgroundColor: C.white }, sheetGrabber: { width: 36, height: 4, alignSelf: 'center', marginBottom: 13, borderRadius: 4, backgroundColor: '#D9DED8' }, sheetTitle: { color: C.ink, fontSize: 17, fontWeight: '700', textAlign: 'center' }, sheetSubtitle: { alignSelf: 'center', maxWidth: 300, marginTop: 5, marginBottom: 12, color: '#969D98', fontSize: 11, lineHeight: 16, textAlign: 'center' }, sheetContent: { flexShrink: 1 }, sheetActions: { flexDirection: 'row', gap: 9, marginTop: 12 }, optionRow: { minHeight: 49, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EEF0EC' }, optionTitle: { color: C.ink, fontSize: 12, fontWeight: '500' }, optionSubtitle: { color: C.muted, fontSize: 10, marginTop: 3 }, sheetEmpty: { padding: 15, color: C.muted, fontSize: 12, textAlign: 'center' }, jsonInput: { minHeight: 96, marginTop: 6, textAlignVertical: 'top', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 12 },
   toast: { position: 'absolute', left: 20, right: 20, bottom: 74, zIndex: 20, minHeight: 38, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: '#26312B', elevation: 5 }, toastText: { color: C.white, fontSize: 11, textAlign: 'center' }, loadingOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8F9F7AA' },
+
+  banner: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, zIndex: 30 },
+  bannerTitle: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+  bannerSub: { color: '#FFFFFFCC', fontSize: 11, marginTop: 1 },
+  bannerClose: { padding: 4, marginLeft: 6 },
+  quickCmdGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 },
+  quickCmdButton: { width: '30%', flexGrow: 1, minWidth: '28%', minHeight: 76, alignItems: 'center', justifyContent: 'center', gap: 6, padding: 8, borderRadius: 12, borderWidth: 1.5, backgroundColor: C.white },
+  quickCmdIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  quickCmdLabel: { fontSize: 10, fontWeight: '700', textAlign: 'center' },
+  downlinkSuccessBox: { minHeight: 140, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  downlinkSuccessText: { fontSize: 16, fontWeight: '700', color: C.green },
+  autoSummaryRow: { flexDirection: 'row', gap: 9, marginBottom: 6 },
+  autoSummaryCard: { flex: 1, minHeight: 78, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 12, padding: 10 },
+  autoSummaryVal: { fontSize: 20, fontWeight: '800' },
+  autoSummaryLabel: { fontSize: 10, color: C.muted, fontWeight: '600' },
+  autoRuleCard: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, marginBottom: 8, borderRadius: 12, backgroundColor: C.white, elevation: 1, shadowColor: '#192512', shadowOpacity: 0.04, shadowRadius: 5, shadowOffset: { width: 0, height: 1 } },
+  autoRuleIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  autoRuleName: { color: C.ink, fontSize: 13, fontWeight: '700' },
+  autoRuleMeta: { color: C.muted, fontSize: 11, marginTop: 2 },
+  autoAnalyticsLink: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 12, padding: 13, borderRadius: 12, backgroundColor: C.greenPale, borderWidth: 1, borderColor: '#D6E8B7' },
+  autoAnalyticsText: { flex: 1, color: C.greenDark, fontSize: 13, fontWeight: '600' },
+  deviceCardCompact: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: C.white, elevation: 1 },
+  compactDot: { width: 8, height: 8, borderRadius: 4 },
 });
