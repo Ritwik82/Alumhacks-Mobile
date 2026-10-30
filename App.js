@@ -458,15 +458,21 @@ function AppContent() {
 
   const back = useCallback(() => {
     if (modal) { setModal(null); return true; }
-    if (route === 'detail' || route === 'notifications' || route === 'map') {
-      setRoute(route === 'detail' ? previousRoute : route === 'map' ? previousRoute : previousRoute);
+    if (route === 'setup' || route === 'login' || route === 'devices') return false;
+    if (route === 'edit') {
+      setProfileDraft(profile);
+      setProfilePhotoDraftUri(profilePhotoUri);
+      setRoute('profile');
       return true;
     }
-    if (route === 'edit') { setRoute('profile'); return true; }
-    if (route === 'setup') return false;
-    setRoute(tab);
+    if (['locations', 'analytics', 'profile'].includes(route)) {
+      setTab('devices');
+      setRoute('devices');
+      return true;
+    }
+    setRoute(previousRoute && previousRoute !== route ? previousRoute : tab);
     return true;
-  }, [modal, route, previousRoute, tab]);
+  }, [modal, route, previousRoute, tab, profile, profilePhotoUri]);
 
   useEffect(() => {
     const listener = BackHandler.addEventListener('hardwareBackPress', back);
@@ -658,10 +664,6 @@ function AppContent() {
   };
 
   const onDetailBack = () => {
-    if (route === 'detail' && previousRoute === 'map') { setRoute('map'); return; }
-    if (route === 'detail' && previousRoute === 'notifications') { setRoute('notifications'); return; }
-    if (route === 'notifications') { setRoute(previousRoute || 'devices'); return; }
-    if (route === 'map') { setRoute(previousRoute || 'locations'); return; }
     back();
   };
 
@@ -785,7 +787,7 @@ function AppContent() {
       setAutomationRules(current => current.map(item => item.id === rule.id ? { ...item, runs: (item.runs || 0) + (item.running ? 0 : 1), running: !item.running } : item));
     };
     return <View style={styles.screen}>
-      <ScreenHeader title="Automation" onBack={() => setRoute(previousRoute || 'devices')} right={<IconButton name="plus" label="Add automation" color={C.greenDark} onPress={() => { setActiveAutomationId(null); setNewAutomationName(''); setNewAutomationSolution('Default solution'); setNewAutomationOutput('Valve 1'); setNewAutomationMode('manual'); setModal('automation-create'); }} />} />
+      <ScreenHeader title="Automation" onBack={back} right={<IconButton name="plus" label="Add automation" color={C.greenDark} onPress={() => { setActiveAutomationId(null); setNewAutomationName(''); setNewAutomationSolution('Default solution'); setNewAutomationOutput('Valve 1'); setNewAutomationMode('manual'); setModal('automation-create'); }} />} />
       <View style={styles.automationBreadcrumb}><Icon name="home-outline" size={14} color={C.muted} /><Text style={styles.automationBreadcrumbText}>Projects</Text><Icon name="chevron-right" size={13} color={C.muted} /><Text numberOfLines={1} style={styles.automationBreadcrumbText}>{activeProject?.name || 'Demo Project'}</Text><Icon name="chevron-right" size={13} color={C.muted} /><Text style={styles.automationBreadcrumbCurrent}>Automation</Text></View>
       <View style={styles.automationFilters}>
         <Pressable style={styles.automationFilter} onPress={() => setModal('automation-solution')}><View style={styles.automationFilterText}><Text style={styles.automationFilterLabel}>Solution</Text><Text numberOfLines={1} style={styles.automationFilterValue}>{automationSolution}</Text></View><Icon name="chevron-down" size={17} color={C.muted} /></Pressable>
@@ -1088,5 +1090,6 @@ const styles = StyleSheet.create({
   automationSectionHeading: { marginHorizontal: 15, marginTop: 10, marginBottom: 7, color: C.ink, fontSize: 14, fontWeight: '700' }, automationList: { gap: 8, paddingHorizontal: 13, paddingBottom: 18 }, automationCard: { padding: 11, borderWidth: 1, borderColor: '#ECEFEB', borderRadius: 12, backgroundColor: C.white }, automationCardRunning: { borderColor: '#D9E7CC', backgroundColor: '#F4F8EE' }, automationRowTop: { flexDirection: 'row', alignItems: 'center', gap: 4 }, automationName: { color: C.greenDark, fontSize: 11, fontWeight: '700' }, automationSubtitle: { color: C.muted, fontSize: 9, marginTop: 3 }, automationRowBottom: { minHeight: 28, marginTop: 7, flexDirection: 'row', alignItems: 'center', gap: 6 }, runAutomationButton: { minHeight: 25, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 13, backgroundColor: C.green }, runAutomationButtonRunning: { opacity: 0.72 }, runAutomationText: { color: C.white, fontSize: 9, fontWeight: '700' }, automationRunningPill: { paddingHorizontal: 7, paddingVertical: 4, borderWidth: 1, borderColor: '#E4B85A', borderRadius: 9, color: '#A67C24', fontSize: 8, fontWeight: '700' }, automationCountPill: { minHeight: 22, paddingHorizontal: 7, flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 12, backgroundColor: '#F4F5F3' }, automationCountText: { color: C.muted, fontSize: 9 }, automationEmpty: { minHeight: 150, alignItems: 'center', justifyContent: 'center', gap: 8 }, automationApiNote: { marginTop: 4, padding: 10, flexDirection: 'row', alignItems: 'flex-start', gap: 7, borderRadius: 9, backgroundColor: '#F4F8EE' },
   toast: { position: 'absolute', left: 20, right: 20, bottom: 74, zIndex: 20, minHeight: 38, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: '#26312B', elevation: 5 }, toastText: { color: C.white, fontSize: 11, textAlign: 'center' }, loadingOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8F9F7AA' },
 });
+
 
 
