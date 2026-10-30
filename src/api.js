@@ -167,10 +167,11 @@ export class GinjerClient {
 
   async sendDownlink(organisation, device, moduleId, value) {
     if (!isMongoObjectId(device?.apiId)) throw new Error('Ginjer did not return a valid device database ID. Refresh the live device list and select the device again; MAC address and DevEUI are not accepted here.');
+    if (!isMongoObjectId(device?.projectId)) throw new Error('Ginjer did not return a valid project ID for this device. Refresh the project and device list before sending a downlink.');
     if (!isMongoObjectId(moduleId)) throw new Error('Select a valid DOWNLINK_INTERFACE module returned by Ginjer.');
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('The controller command must be a JSON object.');
     return this.request(queries.downlink, {
-      action: { organisationId: organisation.organisationId, deviceId: device.apiId, downlinkInterfaceId: moduleId, value },
+      action: { organisationId: organisation.organisationId, projectId: device.projectId, deviceId: device.apiId, downlinkInterfaceId: moduleId, value },
     });
   }
 }
